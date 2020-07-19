@@ -327,7 +327,7 @@ def main():
     season = '2019-2020-regular'
 
     # for i in range(5):
-    simulateSeasonPicks(season)
+    # simulateSeasonPicks(season)
 
     for threshold in range(3, 16):
         assessSeasonSpreadPicks(season, threshold)
