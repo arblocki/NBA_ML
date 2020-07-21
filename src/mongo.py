@@ -63,7 +63,7 @@ def updateGames(msf, client, season):
         gameSchedule = gameMap[row['gameID']]
         startTime = gameSchedule['startTime']
 
-        threshold = 6
+        threshold = 7
         projectedSpread = row['predAwayScore'] - row['predHomeScore']
         vegasSpread = row['spread']
         actualScoreDiff = row['awayScore'] - row['homeScore']
@@ -74,16 +74,16 @@ def updateGames(msf, client, season):
             units = 1
             if projectedSpread < vegasSpread:
                 team = row['homeTeam']
-                status = 'loss'
+                status = 'LOSS'
                 if actualScoreDiff < vegasSpread:
-                    status = 'win'
+                    status = 'WIN'
             if projectedSpread > vegasSpread:
                 team = row['awayTeam']
-                status = 'loss'
+                status = 'LOSS'
                 if actualScoreDiff > vegasSpread:
-                    status = 'win'
+                    status = 'WIN'
             if actualScoreDiff == vegasSpread:
-                status = 'push'
+                status = 'PUSH'
 
         query = { 'gameID': row['gameID'] }
         newValues = { '$set': {
@@ -110,7 +110,7 @@ def main():
     msf = MySportsFeeds('2.1', verbose=False)
     msf.authenticate(config.MySportsFeeds_key, "MYSPORTSFEEDS")
 
-    updateGames(msf, client, '2019-2020-regular')
+    # updateGames(msf, client, '2019-2020-regular')
 
     client.close()
 

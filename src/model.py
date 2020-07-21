@@ -289,7 +289,7 @@ def simulateSeasonPicks(season):
 
 
 # Given a season and threshold of when to make picks, assess the accuracy and frequency of the picks
-def assessSeasonSpreadPicks(season, threshold, output=False):
+def assessSeasonSpreadPicks(season, threshold):
     # Load game data into dataframe
     df = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
     # Iterate through rows, make picks based on spread, and then check the actual outcome
