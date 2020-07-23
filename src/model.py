@@ -211,9 +211,11 @@ def simulateSeasonPicks(season):
     currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
     currentSeasonDF['predAwayScore'] = -1
     currentSeasonDF['predHomeScore'] = -1
+    currentSeasonDF['rmsError'] = -1
     currentDate = str(currentSeasonDF['date'].iloc[0])
     numRowsForDate = 0
 
+    # Train 10 different models at a time
     models = []
     criterions = []
     optimizers = []
@@ -238,6 +240,7 @@ def simulateSeasonPicks(season):
         mses.append(sqrt(mse))
         models.append(model)
         # print('\tPerformance at epoch ', epoch, ': ', sqrt(mse), sep='')
+    rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the models used for each pick
     print('Trained the initial model with RMSE of ', (sum(mses) / len(mses)), sep='')
 
     for index, row in currentSeasonDF.iterrows():
@@ -277,11 +280,13 @@ def simulateSeasonPicks(season):
                 mses.append(sqrt(mse))
                 models.append(model)
                 # print('\tPerformance at epoch ', epoch, ': ', sqrt(mse), sep='')
+            rmseAvg = sum(mses) / len(mses)
             print('Retrained the model to ', nextDate, ' with RMSE of ', (sum(mses) / len(mses)), sep='')
         # prediction = predict(row.values[0:66].astype('float32'), model)
         prediction = avgPredict(row.values[0:66].astype('float32'), models)
         currentSeasonDF.loc[index, 'predAwayScore'] = prediction[0]
         currentSeasonDF.loc[index, 'predHomeScore'] = prediction[1]
+        currentSeasonDF.loc[index, 'rmsError'] = rmseAvg
         numRowsForDate += 1
 
     basePath = getBasePath(season, '', '', 'gameData')
@@ -327,7 +332,7 @@ def main():
     season = '2019-2020-regular'
 
     # for i in range(5):
-    # simulateSeasonPicks(season)
+    simulateSeasonPicks(season)
 
     for threshold in range(3, 16):
         assessSeasonSpreadPicks(season, threshold)

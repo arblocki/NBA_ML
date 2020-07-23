@@ -8,7 +8,7 @@ import simplejson as json
 import numpy as np
 import pandas as pd
 import time
-from datetime import timedelta, datetime
+from datetime import timedelta
 
 
 # Given a timestamp in UTC ISO-6801 format, return a string (YYYYMMDD) of the previous date in EST
@@ -157,7 +157,7 @@ def extractBasicData(stats):
     return basicData
 
 
-# Given a list of gameIDs, get a row of data for each game, output as Pandas dataframe
+# Given a season and timeframe, get a row of data for each game, output as Pandas dataframe
 def getGameData(msf, season, dateStart, dateEnd):
     # Use Seasonal feed to get list of (final) games between the dates
     if dateStart == '':  # If no date specified, get data from whole season
