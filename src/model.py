@@ -279,10 +279,8 @@ def simulateSeasonPicks(season):
 
                 mses.append(sqrt(mse))
                 models.append(model)
-                # print('\tPerformance at epoch ', epoch, ': ', sqrt(mse), sep='')
             rmseAvg = sum(mses) / len(mses)
             print('Retrained the model to ', nextDate, ' with RMSE of ', (sum(mses) / len(mses)), sep='')
-        # prediction = predict(row.values[0:66].astype('float32'), model)
         prediction = avgPredict(row.values[0:66].astype('float32'), models)
         currentSeasonDF.loc[index, 'predAwayScore'] = prediction[0]
         currentSeasonDF.loc[index, 'predHomeScore'] = prediction[1]
@@ -325,6 +323,64 @@ def assessSeasonSpreadPicks(season, threshold):
     print(season[:9], ' results with threshold = ', threshold, sep='')
     print('\t%.3f picks made per day, %.3f percent of all games bet on, ' % ((numPicks / numDays), (numPicks / numGames)), numPicks, ' total', sep='')
     print('\tRecord: ', numCorrect, '-', numPicks - numCorrect - numPushes, '-', numPushes, ' (%.5f)' % (numCorrect / (numPicks - numPushes)), sep='')
+
+
+# Given a season and dataframe with game input data, output dataframe with predictions for each game
+def predictGames(season, gameDF):
+    # Concatenate the previous two seasons of data with the current season
+    prevSeasonStr = getPrevSeasonStr(season)
+    twoSeasonsBackStr = getPrevSeasonStr(prevSeasonStr)
+    path = '../features/gameData/' + twoSeasonsBackStr + '-games.csv'
+    dataset = CSVDataset(path)
+    prevSeasonDF = pd.read_csv('../features/gameData/' + prevSeasonStr + '-games.csv').set_index('gameID', drop=True)
+    currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
+    dataset.concat(prevSeasonDF)
+    dataset.concat(currentSeasonDF)
+    train_dl, test_dl = prepare_data(dataset)
+    print('Training on ', len(train_dl.dataset), ' games, Testing on ', len(test_dl.dataset), ' games', sep='')
+
+    # Train models
+    gameDF['predAwayScore'] = -1
+    gameDF['predHomeScore'] = -1
+    gameDF['rmsError'] = -1
+    models = []
+    criterions = []
+    optimizers = []
+    mses = []
+    for i in range(10):
+        # define the network
+        model = NN()
+        # model.to(device)
+        # define the optimization
+        criterion = nn.MSELoss()
+        criterions.append(criterion)
+        optimizer = torch.optim.Adam(model.parameters())
+        optimizers.append(optimizer)
+
+        mse = 0
+        for epoch in range(20):
+            # train the model
+            train_epoch(train_dl, model, criterion, optimizer)
+            # evaluate the model
+            mse = evaluate_epoch(test_dl, model)
+
+        mses.append(sqrt(mse))
+        models.append(model)
+        print('\tPerformance of model #', i, ': ', sqrt(mse), sep='')
+    rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the models used for each pick
+    print('Trained the initial model set with RMSE of ', (sum(mses) / len(mses)), sep='')
+
+    # Set gameID as index and drop the column
+    gameDF.set_index('gameID', drop=True)
+
+    # Predict each game
+    for index, row in gameDF.iterrows():
+        prediction = avgPredict(row.values[1:67].astype('float32'), models)
+        gameDF.loc[index, 'predAwayScore'] = prediction[0]
+        gameDF.loc[index, 'predHomeScore'] = prediction[1]
+        gameDF.loc[index, 'rmsError'] = rmseAvg
+
+    return gameDF
 
 
 def main():

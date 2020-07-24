@@ -105,7 +105,7 @@ def updateGames(msf, client, season):
     for game in output['games']:
         gameMap[game['schedule']['id']] = game['schedule']
 
-    df = pd.read_csv('../features/gameData/' + season + '-games_avg1.csv').set_index('gameID', drop=False)
+    df = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=False)
     # Loop through games in dataframe and update games in DB
     for index, row in df.iterrows():
         gameSchedule = gameMap[row['gameID']]
