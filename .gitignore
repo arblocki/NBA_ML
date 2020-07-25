@@ -1,9 +1,5 @@
 src/config
 src/results
-features/gameData
-features/odds
-features/RAPM-inputs
-features/RAPM-ratings
-features/stintsByDate
+features
 .idea
 docs

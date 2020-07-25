@@ -14,6 +14,7 @@ import random
 from src.data_extract import getPrevSeasonStr
 from src.RAPM import getBasePath
 from math import sqrt
+from os import path
 
 
 torch.manual_seed(42)
@@ -383,16 +384,68 @@ def predictGames(season, gameDF):
     return gameDF
 
 
+# Given a season and threshold, update the performance logs with the predicted scores and error in gameData CSV
+def logPerformance(season, threshold):
+    # Load game data into dataframe
+    gameDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID')
+    # Iterate through rows, make picks based on spread, and then check the actual outcome
+    perfDict = {}
+    for index, row in gameDF.iterrows():
+        indexMSE = round(row['rmsError'], 1)
+        # Assess projected spread against Vegas spread
+        projectedSpread = row['predAwayScore'] - row['predHomeScore']
+        vegasSpread = row['spread']
+        actualScoreDiff = row['awayScore'] - row['homeScore']
+        if abs(projectedSpread - vegasSpread) > threshold:
+            if indexMSE not in perfDict:
+                perfDict[indexMSE] = [0, 0, 0]
+            # Assess if pick was correct
+            if projectedSpread < vegasSpread and actualScoreDiff < vegasSpread:
+                perfDict[indexMSE][0] += 1
+            elif projectedSpread > vegasSpread and actualScoreDiff > vegasSpread:
+                perfDict[indexMSE][0] += 1
+            elif actualScoreDiff == vegasSpread:
+                perfDict[indexMSE][2] += 1
+            else:
+                perfDict[indexMSE][1] += 1
+    # Check if a performance CSV already exists
+    filePath = '../features/performance/' + season + '_' + str(threshold) + '.csv'
+    if (path.exists(filePath)):
+        perfDF = pd.read_csv(filePath).set_index('rmse', drop=True)
+        # Add items from this run onto the existing performance records
+        for mse, record in perfDict.items():
+            if mse in perfDF.index:
+                perfDF.loc[mse, 'win'] += record[0]
+                perfDF.loc[mse, 'loss'] += record[1]
+                perfDF.loc[mse, 'push'] += record[2]
+            else:
+                record.append(0)
+                perfDF.loc[mse] = record
+        perfDF = perfDF.sort_index()
+        perfDF['winPct'] = ((2 * perfDF['win']) + perfDF['push']) / (2 * (perfDF['win'] + perfDF['loss'] + perfDF['push']))
+        perfDF.to_csv(filePath)
+    else:
+        perfDF = pd.DataFrame.from_dict(perfDict, orient='index', columns=['win', 'loss', 'push'])
+        perfDF = perfDF.sort_index()  # Sort by ascending RMSE
+        perfDF.index.name = 'rmse'    # Name the index column
+        perfDF['winPct'] = ((2 * perfDF['win']) + perfDF['push']) / (2 * (perfDF['win'] + perfDF['loss'] + perfDF['push']))
+        perfDF.to_csv(filePath)
+
+
 def main():
 
     season = '2019-2020-regular'
 
     # for i in range(5):
-    simulateSeasonPicks(season)
+    # simulateSeasonPicks(season)
+    #
+    # for threshold in range(3, 16):
+    #     assessSeasonSpreadPicks(season, threshold)
+    #     assessSeasonSpreadPicks(season, threshold + 0.5)
 
-    for threshold in range(3, 16):
-        assessSeasonSpreadPicks(season, threshold)
-        assessSeasonSpreadPicks(season, threshold + 0.5)
+    logPerformance(season, 6)
+    logPerformance(season, 7)
+    logPerformance(season, 7.5)
 
 
 if __name__ == '__main__':
