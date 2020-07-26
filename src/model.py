@@ -189,6 +189,48 @@ def avgPredict(row, models):
     return [predAwayAvg, predHomeAvg]
 
 
+# Train and evaluate 10 different models
+def trainModelEnsemble(train_dl, test_dl):
+    # Train 10 different models at a time
+    models = []
+    criterions = []
+    optimizers = []
+    mses = []
+    for i in range(10):
+        # define the network
+        model = NN()
+        # model.to(device)
+        # define the optimization
+        criterion = nn.MSELoss()
+        criterions.append(criterion)
+        optimizer = torch.optim.Adam(model.parameters())
+        optimizers.append(optimizer)
+
+        mse = 1000
+        epoch = 0
+        bestModel = model
+        bestMSE = mse
+        bestEpoch = -1
+        while (sqrt(mse) > 13):
+            train_epoch(train_dl, model, criterion, optimizer)
+            mse = evaluate_epoch(test_dl, model)
+            if mse < bestMSE:
+                bestModel = model
+                bestMSE = mse
+                bestEpoch = epoch
+            if epoch >= 40:
+                model = bestModel
+                mse = bestMSE
+                epoch = bestEpoch
+                print('\t\tReached epoch 40, outputing best model so far')
+                break
+            epoch += 1
+        print('\tPerformance of model ', i, ' at epoch ', epoch, ': ', sqrt(mse), sep='')
+        mses.append(sqrt(mse))
+        models.append(model)
+    return models, mses
+
+
 # Given a season, simulate every day of game predictions
 #   Each date of games, train on all games from previous season and this season thus far
 #   Predict games using that model, and make spread picks if there is a projected difference above the given threshold
@@ -216,31 +258,7 @@ def simulateSeasonPicks(season):
     currentDate = str(currentSeasonDF['date'].iloc[0])
     numRowsForDate = 0
 
-    # Train 10 different models at a time
-    models = []
-    criterions = []
-    optimizers = []
-    mses = []
-    for i in range(10):
-        # define the network
-        model = NN()
-        # model.to(device)
-        # define the optimization
-        criterion = nn.MSELoss()
-        criterions.append(criterion)
-        optimizer = torch.optim.Adam(model.parameters())
-        optimizers.append(optimizer)
-
-        mse = 0
-        for epoch in range(20):
-            # train the model
-            train_epoch(train_dl, model, criterion, optimizer)
-            # evaluate the model
-            mse = evaluate_epoch(test_dl, model)
-
-        mses.append(sqrt(mse))
-        models.append(model)
-        # print('\tPerformance at epoch ', epoch, ': ', sqrt(mse), sep='')
+    models, mses = trainModelEnsemble(train_dl, test_dl)
     rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the models used for each pick
     print('Trained the initial model with RMSE of ', (sum(mses) / len(mses)), sep='')
 
@@ -257,29 +275,7 @@ def simulateSeasonPicks(season):
             currentDate = nextDate
             numRowsForDate = 0
 
-            models = []
-            criterions = []
-            optimizers = []
-            mses = []
-            for i in range(10):
-                # define the network
-                model = NN()
-                # model.to(device)
-                # define the optimization
-                criterion = nn.MSELoss()
-                criterions.append(criterion)
-                optimizer = torch.optim.Adam(model.parameters())
-                optimizers.append(optimizer)
-
-                mse = 0
-                for epoch in range(20):
-                    # train the model
-                    train_epoch(train_dl, model, criterion, optimizer)
-                    # evaluate the model
-                    mse = evaluate_epoch(test_dl, model)
-
-                mses.append(sqrt(mse))
-                models.append(model)
+            models, mses = trainModelEnsemble(train_dl, test_dl)
             rmseAvg = sum(mses) / len(mses)
             print('Retrained the model to ', nextDate, ' with RMSE of ', (sum(mses) / len(mses)), sep='')
         prediction = avgPredict(row.values[0:66].astype('float32'), models)
@@ -325,6 +321,7 @@ def assessSeasonSpreadPicks(season, threshold):
     print('\t%.3f picks made per day, %.3f percent of all games bet on, ' % ((numPicks / numDays), (numPicks / numGames)), numPicks, ' total', sep='')
     print('\tRecord: ', numCorrect, '-', numPicks - numCorrect - numPushes, '-', numPushes, ' (%.5f)' % (numCorrect / (numPicks - numPushes)), sep='')
 
+# TODO: Assess Season O/U Picks
 
 # Given a season and dataframe with game input data, output dataframe with predictions for each game
 def predictGames(season, gameDF):
@@ -344,30 +341,7 @@ def predictGames(season, gameDF):
     gameDF['predAwayScore'] = -1
     gameDF['predHomeScore'] = -1
     gameDF['rmsError'] = -1
-    models = []
-    criterions = []
-    optimizers = []
-    mses = []
-    for i in range(10):
-        # define the network
-        model = NN()
-        # model.to(device)
-        # define the optimization
-        criterion = nn.MSELoss()
-        criterions.append(criterion)
-        optimizer = torch.optim.Adam(model.parameters())
-        optimizers.append(optimizer)
-
-        mse = 0
-        for epoch in range(20):
-            # train the model
-            train_epoch(train_dl, model, criterion, optimizer)
-            # evaluate the model
-            mse = evaluate_epoch(test_dl, model)
-
-        mses.append(sqrt(mse))
-        models.append(model)
-        print('\tPerformance of model #', i, ': ', sqrt(mse), sep='')
+    models, mses = trainModelEnsemble(train_dl, test_dl)
     rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the models used for each pick
     print('Trained the initial model set with RMSE of ', (sum(mses) / len(mses)), sep='')
 
@@ -437,11 +411,11 @@ def main():
     season = '2019-2020-regular'
 
     # for i in range(5):
-    # simulateSeasonPicks(season)
-    #
-    # for threshold in range(3, 16):
-    #     assessSeasonSpreadPicks(season, threshold)
-    #     assessSeasonSpreadPicks(season, threshold + 0.5)
+    simulateSeasonPicks(season)
+
+    for threshold in range(3, 16):
+        assessSeasonSpreadPicks(season, threshold)
+        assessSeasonSpreadPicks(season, threshold + 0.5)
 
     logPerformance(season, 6)
     logPerformance(season, 7)

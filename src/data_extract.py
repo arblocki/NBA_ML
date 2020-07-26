@@ -46,10 +46,17 @@ def getPrevSeasonStr(season):
 
 
 # Given a team, season, and RAPM ratings, output the weightedTeamRAPM
-def calculateWeightedTeamRAPM(msf, season, teamID, ratingDict):
+def calculateWeightedTeamRAPM(msf, season, teamID, ratingDict, injuries=False):
     # Get MinutesPerGame for each player on the team
     output = msf.msf_get_data(feed='seasonal_player_stats', league='nba', season=season, team=teamID,
                               stats='minSecondsPerGame', format='json', force='true')
+    # Map from playerID to injury status
+    injuryDict = {}
+    nameDict = {}
+    if injuries:
+        injuries = msf.msf_get_data(feed='player_injuries', league='nba', team=teamID, format='json', force='true')
+        for player in injuries['players']:
+            injuryDict[player['id']] = player['currentInjury']['playingProbability']
     # Record each player's minutes per game, as well as the team total (to calculate average)
     playerIDs = []
     minPerGameByPID = {}
@@ -62,13 +69,27 @@ def calculateWeightedTeamRAPM(msf, season, teamID, ratingDict):
     avgMinPerGame = totalMinPerGame / len(playerIDs)
     teamTotalRAPM = 0
     # Sum every player's weightedRAPM ((minutesPerGame / teamAverageMinutesPerGame) * rating)
+    numSkipped = 0
     for PID in playerIDs:
         if PID not in ratingDict:
+            print('Skipping PID ', PID, ' in RAPM calculations due to lack of data', sep='')
+            numSkipped += 1
             continue
+        if PID in injuryDict:
+            if (injuryDict[PID] == 'OUT') or (injuryDict[PID] == 'DOUBTFUL'):
+                print('Skipping PID ', PID, ' in RAPM calculations due to injury', sep='')
+                numSkipped += 1
+                continue
+            if injuryDict[PID] == 'QUESTIONABLE':
+                # If a player is questionable, add half of their rating on
+                rating = ratingDict[PID] * 0.5
+                minPerGame = minPerGameByPID[PID]
+                teamTotalRAPM += (minPerGame / avgMinPerGame) * rating
+                continue
         rating = ratingDict[PID]
         minPerGame = minPerGameByPID[PID]
         teamTotalRAPM += (minPerGame / avgMinPerGame) * rating
-    weightedTeamRAPM = teamTotalRAPM / len(playerIDs)
+    weightedTeamRAPM = teamTotalRAPM / (len(playerIDs) - numSkipped)
 
     return weightedTeamRAPM
 
@@ -77,7 +98,7 @@ def calculateWeightedTeamRAPM(msf, season, teamID, ratingDict):
 # Used for previous seasons, current seasons take a date range into account
 def getPrevSeasonWeightedTeamRAPM(msf, season, teamID):
     ratingDict = importPlayerRatings(season)
-    return calculateWeightedTeamRAPM(msf, season, teamID, ratingDict)
+    return calculateWeightedTeamRAPM(msf, season, teamID, ratingDict, injuries=False)
 
 
 # Given a team and time-frame, get the weighted team RAPM
@@ -90,7 +111,7 @@ def getTimeframeRAPM(msf, season, numStints, teamID):
     for rating in ratings:
         ratingDict[int(rating[0])] = rating[1]
     # Calculate RAPM from the specified window of data
-    return calculateWeightedTeamRAPM(msf, season, teamID, ratingDict)
+    return calculateWeightedTeamRAPM(msf, season, teamID, ratingDict, injuries=False)
 
 
 # Given a team's seasonal stats, output the four factors stats that we can calculate given our data (only 2 right now)
@@ -320,7 +341,7 @@ def getUpcomingGameData(msf, season, date):
                 gameData.append(prevSeasonWeightedTeamRAPM)
 
                 # Get current season RAPM weighted total
-                weightedTeamRAPM = calculateWeightedTeamRAPM(msf, season, teamID, ratingDict)
+                weightedTeamRAPM = calculateWeightedTeamRAPM(msf, season, teamID, ratingDict, injuries=True)
                 gameData.append(weightedTeamRAPM)
 
                 # Get team data and use it to calculate four factors
@@ -408,6 +429,7 @@ def mergeOddsToGameData(msf, season):
     basePath = RAPM.getBasePath(season, '', '', 'gameData')
     gameDF.to_csv(basePath + '-games.csv')
 
+# TODO: Merge O/U to game data
 
 def main():
     # Create instance of MySportsFeeds API and authenticate

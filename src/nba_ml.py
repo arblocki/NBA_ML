@@ -7,6 +7,7 @@ from src.data_extract import getUpcomingGameData
 from src.model import predictGames
 from src.RAPM import getBasePath
 import pandas as pd
+import simplejson as json
 
 def main():
 
@@ -19,10 +20,10 @@ def main():
     gameDF = getUpcomingGameData(msf, season, '20200730')
     gameDF = predictGames(season, gameDF)
 
-    currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv')
-    newDF = pd.concat([currentSeasonDF, gameDF])
-    basePath = getBasePath(season, '', '', 'gameData')
-    newDF.to_csv(basePath + '-games-test.csv', index=False) # SWITCH TO newDF ONCE WE ARE OVERWRITING DATA
+    # currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv')
+    # newDF = pd.concat([currentSeasonDF, gameDF])
+    basePath = getBasePath(season, '20200730', '', 'gameData')
+    gameDF.to_csv(basePath + '-games-test.csv', index=False) # SWITCH TO newDF ONCE WE ARE OVERWRITING DATA
 
 
 if __name__ == '__main__':
