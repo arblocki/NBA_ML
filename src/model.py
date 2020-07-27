@@ -190,7 +190,7 @@ def avgPredict(row, models):
 
 
 # Train and evaluate 10 different models
-def trainModelEnsemble(train_dl, test_dl):
+def trainModelEnsemble(train_dl, test_dl, dataset):
     # Train 10 different models at a time
     models = []
     criterions = []
@@ -207,27 +207,24 @@ def trainModelEnsemble(train_dl, test_dl):
         optimizers.append(optimizer)
 
         mse = 1000
-        epoch = 0
-        bestModel = model
-        bestMSE = mse
-        bestEpoch = -1
-        while (sqrt(mse) > 13):
-            train_epoch(train_dl, model, criterion, optimizer)
-            mse = evaluate_epoch(test_dl, model)
-            if mse < bestMSE:
-                bestModel = model
-                bestMSE = mse
-                bestEpoch = epoch
-            if epoch >= 40:
-                model = bestModel
-                mse = bestMSE
-                epoch = bestEpoch
-                print('\t\tReached epoch 40, outputing best model so far')
+        count = 0
+        while (sqrt(mse) > 13.5):
+            if (count != 0):
+                print('\t\tRMSE on model ', i, ' was ', sqrt(mse), ', getting new random split', sep='')
+                train_dl, test_dl = prepare_data(dataset)
+            if (count == 3):
+                print('\t\tReached third iteration, outputting result')
                 break
-            epoch += 1
-        print('\tPerformance of model ', i, ' at epoch ', epoch, ': ', sqrt(mse), sep='')
+            for epoch in range(20):
+                # train the model
+                train_epoch(train_dl, model, criterion, optimizer)
+                # evaluate the model
+                mse = evaluate_epoch(test_dl, model)
+            count += 1
+
         mses.append(sqrt(mse))
         models.append(model)
+        # print('\tPerformance at epoch ', epoch, ': ', sqrt(mse), sep='')
     return models, mses
 
 
@@ -258,7 +255,7 @@ def simulateSeasonPicks(season):
     currentDate = str(currentSeasonDF['date'].iloc[0])
     numRowsForDate = 0
 
-    models, mses = trainModelEnsemble(train_dl, test_dl)
+    models, mses = trainModelEnsemble(train_dl, test_dl, dataset)
     rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the models used for each pick
     print('Trained the initial model with RMSE of ', (sum(mses) / len(mses)), sep='')
 
@@ -275,7 +272,7 @@ def simulateSeasonPicks(season):
             currentDate = nextDate
             numRowsForDate = 0
 
-            models, mses = trainModelEnsemble(train_dl, test_dl)
+            models, mses = trainModelEnsemble(train_dl, test_dl, dataset)
             rmseAvg = sum(mses) / len(mses)
             print('Retrained the model to ', nextDate, ' with RMSE of ', (sum(mses) / len(mses)), sep='')
         prediction = avgPredict(row.values[0:66].astype('float32'), models)
@@ -341,7 +338,7 @@ def predictGames(season, gameDF):
     gameDF['predAwayScore'] = -1
     gameDF['predHomeScore'] = -1
     gameDF['rmsError'] = -1
-    models, mses = trainModelEnsemble(train_dl, test_dl)
+    models, mses = trainModelEnsemble(train_dl, test_dl, dataset)
     rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the models used for each pick
     print('Trained the initial model set with RMSE of ', (sum(mses) / len(mses)), sep='')
 

@@ -2,4 +2,5 @@ src/config
 src/results
 features
 .idea
+.vscode
 docs
