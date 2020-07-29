@@ -90,14 +90,13 @@ def insertUnplayedGames(msf, client, season):
 
 
 # Given an MSF instance, DB instance, and season string, update all games to whatever data is locally stored
-def updateGames(msf, client, season):
+def updateGames(msf, client, season, df):
     # Get year's string to access database
     seasonSubstr = getSeasonStr(season)
     db = client[seasonSubstr]
     coll = db['games']
 
-    output = msf.msf_get_data(feed='seasonal_games', league='nba', season=season, status='final', format='json',
-                              force='true')
+    output = msf.msf_get_data(feed='seasonal_games', league='nba', season=season, format='json', force='true')
     # Map from teamID to city and name
     cityDict, nameDict = getTeamDicts(output['references']['teamReferences'])
     # Map from gameID to gameSchedule data
@@ -105,7 +104,6 @@ def updateGames(msf, client, season):
     for game in output['games']:
         gameMap[game['schedule']['id']] = game['schedule']
 
-    df = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=False)
     # Loop through games in dataframe and update games in DB
     for index, row in df.iterrows():
         gameSchedule = gameMap[row['gameID']]
@@ -132,6 +130,9 @@ def updateGames(msf, client, season):
                     status = 'WIN'
             if actualScoreDiff == vegasSpread:
                 status = 'PUSH'
+        # Check for game with no final scores
+        if row['homeScore'] == -1:
+            status = ''
 
         query = { 'gameID': row['gameID'] }
         newValues = { '$set': {
@@ -150,6 +151,50 @@ def updateGames(msf, client, season):
         coll.update_one(query, newValues)
 
 
+# Call updateGames using the dataframe from today-games.csv
+def updateTodayGames(msf, client, season):
+    df = pd.read_csv('../features/gameData/today-games.csv').set_index('gameID', drop=False)
+    updateGames(msf, client, season, df)
+
+
+# Update games from yesterday with final score and bet results
+def updateYesterdayGames(client, season, game):
+    # Get year's string to access database
+    seasonSubstr = getSeasonStr(season)
+    db = client[seasonSubstr]
+    coll = db['games']
+
+    awayScore = game['score']['awayScoreTotal']
+    homeScore = game['score']['homeScoreTotal']
+
+    query = { 'gameID': game['schedule']['id'] }
+    gameDoc = coll.find(query)
+    status = ''
+    if gameDoc.bet.units != 0:
+        scoreDiff = awayScore - homeScore
+        if gameDoc.bet.team == gameDoc.awayTeam.abbreviation:
+            if scoreDiff > gameDoc.spread:
+                status = 'WIN'
+            else:
+                status = 'LOSS'
+        if gameDoc.bet.team == gameDoc.homeTeam.abbreviation:
+            if scoreDiff < gameDoc.spread:
+                status = 'WIN'
+            else:
+                status = 'LOSS'
+        if scoreDiff == gameDoc.spread:
+            status = 'PUSH'
+
+    # Update with new values
+    newValues = { '$set': {
+        'score.away': awayScore,
+        'score.home': homeScore,
+        'bet.status': status,
+    }}
+
+    coll.update_one(query, newValues)
+
+
 def main():
     client = pymongo.MongoClient('mongodb+srv://' + config.mongoBlock + ':' + config.mongoBlockPW +
                                  '@nba-data.nftax.azure.mongodb.net/NBA-ML?retryWrites=true&w=majority')
@@ -160,7 +205,8 @@ def main():
 
     season = '2019-2020-regular'
 
-    # updateGames(msf, client, season)
+    # df = pd.read_csv('../features/gameData/' + season + 'games.csv').set_index('gameID', drop=False)
+    updateTodayGames(msf, client, season)
     # insertUnplayedGames(msf, client, season)
 
     client.close()

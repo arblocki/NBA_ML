@@ -362,6 +362,18 @@ def outputStintCSV(msf, season):
     df.to_csv('../features/stintsByDate/' + season + '-stints.csv')
 
 
+# Given a season, date, and number of stints, append this day's stints onto the existing CSV
+# Used in the daily script, doesn't call getStintNumber because we will already have the number of stints from
+#   calculating RAPM
+def addDateStintsToCSV(season, date, stintNum):
+    # Import CSV to dataframe
+    df = pd.read_csv('../features/stintsByDate/' + season + '-stints.csv',
+                               dtype={'date': str, 'numStints': int}, index_col=0)
+    totalStints = df.loc[len(df)-1, 'numStints'] + stintNum
+    df = df.append({'date': date, 'numStints': totalStints}, ignore_index=True)
+    # Export back to CSV
+    df.to_csv('../features/stintsByDate/' + season + '-stints.csv')
+
 # Given units, points, and weights values, calculates RAPM for each player and outputs a list of pairs
 # as (PlayerID, RAPM)
 def calculateRAPM(units, points, weights):
@@ -463,8 +475,9 @@ def main():
     msf.authenticate(config.MySportsFeeds_key, "MYSPORTSFEEDS")
 
     # seasons = ['2016-playoff', '2017-playoff', '2018-playoff', '2019-playoff']
-    season = '2016-2017-regular'
-    outputStintCSV(msf, season)
+    season = '2019-2020-regular'
+    # addDateStintsToCSV(season, '20200728', 100)
+    # outputStintCSV(msf, season)
     # dateStart = ''
     # dateEnd = ''
     # printRatings = False

@@ -80,12 +80,6 @@ def calculateWeightedTeamRAPM(msf, season, teamID, ratingDict, injuries=False):
                 print('Skipping PID ', PID, ' in RAPM calculations due to injury', sep='')
                 numSkipped += 1
                 continue
-            if injuryDict[PID] == 'QUESTIONABLE':
-                # If a player is questionable, add half of their rating on
-                rating = ratingDict[PID] * 0.5
-                minPerGame = minPerGameByPID[PID]
-                teamTotalRAPM += (minPerGame / avgMinPerGame) * rating
-                continue
         rating = ratingDict[PID]
         minPerGame = minPerGameByPID[PID]
         teamTotalRAPM += (minPerGame / avgMinPerGame) * rating
