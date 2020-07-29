@@ -27,8 +27,15 @@ def updateRAPMFeatures(msf, season, yesterdayStr):
     RAPM.exportPlayerRatings(newRatings, playerDict, '../features/RAPM-ratings/' + season)
 
 
-def main():
+# Get spreads from Odds API, and update them in CSVs, then MongoDB
+def updateTodaySpreads(msf, client, season):
+    gameDF = pd.read_csv('../features/gameData/today-games.csv').set_index('gameID', drop=False)
+    gameDF = getTodaySpreads(gameDF)
+    gameDF.to_csv('../features/gameData/today-games.csv', index=False)
+    updateTodayGames(msf, client, season)
 
+
+def main():
     # Create instance of MySportsFeeds API and authenticate
     msf = MySportsFeeds('2.1', verbose=False)
     msf.authenticate(config.MySportsFeeds_key, config.msfPassword)
@@ -69,6 +76,7 @@ def main():
     basePath = RAPM.getBasePath(season, 'today', '', 'gameData')
     gameDF.to_csv(basePath + '-games.csv', index=False)
     updateTodayGames(msf, client, season)
+
 
 if __name__ == '__main__':
     main()
