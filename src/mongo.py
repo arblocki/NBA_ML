@@ -141,6 +141,7 @@ def updateGames(msf, client, season, df):
             'awayTeam.name': nameDict[gameSchedule['awayTeam']['id']],
             'homeTeam.city': cityDict[gameSchedule['homeTeam']['id']],
             'homeTeam.name': nameDict[gameSchedule['homeTeam']['id']],
+            'spread': row['spread'],
             'bet.units': units,
             'bet.team': team,
             'bet.status': status,
