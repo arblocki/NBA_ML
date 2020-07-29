@@ -3,4 +3,6 @@ src/results
 features
 .idea
 .vscode
+azure-functions-core-tools
 docs
+requirements.txt
