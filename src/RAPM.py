@@ -150,7 +150,7 @@ def extractPbpData(msf, season, dateStart='', dateEnd=''):
             awayUnit = []
             for awayPlayer in away:
                 if 'Starter' in awayPlayer['position']:
-                    awayUnit.append(awayPlayer['player']['id'])
+                    awayUnit.append(str(awayPlayer['player']['id']))
 
             try:
                 home = output['teamLineups'][1]['actual']['lineupPositions']
@@ -161,7 +161,7 @@ def extractPbpData(msf, season, dateStart='', dateEnd=''):
             homeUnit = []
             for homePlayer in home:
                 if 'Starter' in homePlayer['position']:
-                    homeUnit.append(homePlayer['player']['id'])
+                    homeUnit.append(str(homePlayer['player']['id']))
             homeTeamID = output['game']['homeTeam']['id']
 
             # For each stint, add up points and possessions for each side
@@ -227,7 +227,7 @@ def extractPbpData(msf, season, dateStart='', dateEnd=''):
                                            homeUnit]
                         elif playerOut == -1 and playerIn != -1:
                             if playerIn not in homeUnit:
-                                homeUnit.append(playerIn)
+                                homeUnit.append(str(playerIn))
                         elif playerOut != -1 and playerIn == -1:
                             try:
                                 homeUnit.remove(playerOut)
@@ -239,7 +239,7 @@ def extractPbpData(msf, season, dateStart='', dateEnd=''):
                                            awayUnit]
                         elif playerOut == -1 and playerIn != -1:
                             if playerIn not in homeUnit:
-                                awayUnit.append(playerIn)
+                                awayUnit.append(str(playerIn))
                         elif playerOut != -1 and playerIn == -1:
                             try:
                                 awayUnit.remove(playerOut)
@@ -461,7 +461,7 @@ def exportPlayerRatings(ratings, playerDict, basePath):
     # Create new object with playerID, name, and RAPM
     ratingsWithName = []
     for rating in ratings:
-        nextPlayer = {'id': rating[0], 'name': playerDict[rating[0]], 'rating': rating[1]}
+        nextPlayer = {'id': rating[0], 'name': playerDict[int(rating[0])], 'rating': rating[1]}
         ratingsWithName.append(nextPlayer)
     # Output ratings object
     filename = basePath + '-RAPM.json'
