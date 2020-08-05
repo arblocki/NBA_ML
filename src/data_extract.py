@@ -26,7 +26,7 @@ def importPlayerRatings(season):
         ratings = json.load(inFile)
     ratingDict = {}
     for rating in ratings:
-        ratingDict[rating['id']] = rating['rating']
+        ratingDict[int(rating['id'])] = rating['rating']
     return ratingDict
 
 
@@ -52,11 +52,82 @@ def calculateWeightedTeamRAPM(msf, season, teamID, ratingDict, injuries=False):
                               stats='minSecondsPerGame', format='json', force='true')
     # Map from playerID to injury status
     injuryDict = {}
+    # if injuries:
+    #     injuryDict = {
+    #         9191: 'OUT',
+    #         17236: 'OUT',
+    #         9197: 'OUT',
+    #         10113: 'OUT',   # Sabonis
+    #         9131: 'OUT',
+    #         13726: 'OUT',
+    #         9244: 'OUT',
+    #         9287: 'QUESTIONABLE', # Lou Williams
+    #         9464: 'OUT',
+    #         17284: 'OUT',
+    #         9257: 'DOUBTFUL',
+    #         15314: 'OUT',
+    #         15213: 'OUT',
+    #         9402: 'OUT',
+    #         9097: 'OUT',
+    #         17211: 'DOUBTFUL',
+    #         10112: 'DOUBTFUL',
+    #         17219: 'OUT',
+    #         9263: 'OUT',
+    #         101155: 'OUT',
+    #         9209: 'OUT',
+    #         9268: 'OUT',
+    #         9188: 'OUT',
+    #         17252: 'OUT',
+    #         9157: 'OUT',
+    #         9386: 'OUT',
+    #         11993: 'OUT',
+    #         11882: 'OUT',
+    #         17315: 'OUT',
+    #         9523: 'OUT',
+    #         9522: 'OUT',
+    #         10109: 'OUT',
+    #         13752: 'OUT',
+    #         9235: 'OUT',
+    #         9510: 'OUT',
+    #         9470: 'OUT',
+    #         10110: 'OUT',
+    #         9512: 'OUT',
+    #         9480: 'OUT',
+    #         9347: 'OUT',
+    #         9313: 'OUT',
+    #         9452: 'OUT',
+    #         9431: 'QUESTIONABLE', # Alex Len
+    #         15199: 'OUT',
+    #         9494: 'OUT',
+    #         9352: 'OUT',
+    #         9275: 'OUT',
+    #         9088: 'OUT',
+    #         12199: 'OUT',
+    #         9456: 'OUT',
+    #         9428: 'OUT',
+    #         13811: 'OUT',
+    #         9127: 'OUT',
+    #         9128: 'OUT',
+    #         15280: 'OUT',
+    #         9461: 'OUT',
+    #         9211: 'OUT',    # Lou Williams
+    #         17311: 'OUT',
+    #         9526: 'OUT',
+    #         17292: 'OUT',
+    #         9659: 'OUT',    # Caris Lavert
+    #         13749: 'OUT',   # Jarrett Allen
+    #         9450: 'OUT',    # Joe Harris
+    #         9179: 'OUT',    # Wesley Matthews
+    #         9467: 'OUT',    # Seth Curry
+    #         17241: 'OUT',   # Goga Bitadze
+    #         13733: 'OUT',   # Jonathan Isaac
+    #     }
     nameDict = {}
     if injuries:
         injuries = msf.msf_get_data(feed='player_injuries', league='nba', team=teamID, format='json', force='true')
         for player in injuries['players']:
             injuryDict[player['id']] = player['currentInjury']['playingProbability']
+            nameDict[player['id']] = player['firstName'] + ' ' + player['lastName']
     # Record each player's minutes per game, as well as the team total (to calculate average)
     playerIDs = []
     minPerGameByPID = {}
@@ -72,12 +143,13 @@ def calculateWeightedTeamRAPM(msf, season, teamID, ratingDict, injuries=False):
     numSkipped = 0
     for PID in playerIDs:
         if PID not in ratingDict:
-            print('Skipping PID ', PID, ' in RAPM calculations due to lack of data', sep='')
+            print('Skipping ', PID, ' in RAPM calculations due to lack of data', sep='')
             numSkipped += 1
             continue
         if PID in injuryDict:
             if (injuryDict[PID] == 'OUT') or (injuryDict[PID] == 'DOUBTFUL'):
-                print('Skipping PID ', PID, ' in RAPM calculations due to injury', sep='')
+                print('Skipping ', nameDict[PID], ' (', PID, ') in RAPM calculations due to injury', sep='')
+                # print('Skipping ', PID, ' in RAPM calculations due to injury', sep='')
                 numSkipped += 1
                 continue
         rating = ratingDict[PID]
@@ -189,7 +261,7 @@ def getColumnNames():
         homeColumns.append(field.replace('away', 'home'))
     columns.extend(awayColumns)
     columns.extend(homeColumns)
-    columns.extend(['awayScore', 'homeScore', 'spread', 'date', 'awayTeam', 'awayID', 'homeTeam', 'homeID'])
+    columns.extend(['awayScore', 'homeScore', 'spread', 'overUnder', 'date', 'awayTeam', 'awayID', 'homeTeam', 'homeID'])
     return columns
 
 
@@ -297,8 +369,7 @@ def getFinalGameData(msf, season, dateStart, dateEnd):
 def getUpcomingGameData(msf, season, date):
     output = msf.msf_get_data(feed='daily_games', date=date, league='nba', season=season, format='json', force='true')
     if config.debug:
-        print('Getting list of games...')
-        print('\t', len(output['games']), ' games to analyze', sep='')
+        print('\t', len(output['games']), ' upcoming games to analyze', sep='')
     games = []
     for game in output['games']:
         gameObject = {
@@ -350,7 +421,7 @@ def getUpcomingGameData(msf, season, date):
                 gameData.extend(fourFactorsData)
                 gameData.extend(basicPerGameData)
             dateStr = estGameDate.strftime('%Y%m%d')
-            gameData.extend([game['awayScore'], game['homeScore'], -100, dateStr, game['awayName'], game['awayID'],
+            gameData.extend([game['awayScore'], game['homeScore'], -100, -100, dateStr, game['awayName'], game['awayID'],
                              game['homeName'], game['homeID']])
         except Exception as err:
             columns = getColumnNames()
@@ -372,8 +443,9 @@ def getUpcomingGameData(msf, season, date):
     gameDF = pd.DataFrame(np.array(gameDataArray), columns=columns)
     return gameDF
 
+
 # Given a season string, add on spread to the existing gameData frame from odds CSV file
-def mergeOddsToGameData(msf, season):
+def mergeSpreadToGameData(msf, season):
     # Import the game dataset and odds CSV file
     print('Importing ', season, ' dataset and odds...', sep='')
     gameDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
@@ -423,16 +495,69 @@ def mergeOddsToGameData(msf, season):
     basePath = RAPM.getBasePath(season, '', '', 'gameData')
     gameDF.to_csv(basePath + '-games.csv')
 
-# TODO: Merge O/U to game data
+
+# Given a season string, add on Over/Under to the existing gameData frame from odds CSV file
+def mergeOverUnderToGameData(msf, season):
+    # Import the game dataset and odds CSV file
+    print('Importing ', season, ' dataset and odds...', sep='')
+    gameDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
+    oddsDF = pd.read_csv('../features/odds/' + season[:9] + '-odds.csv')
+    gameDF['overUnder'] = -100
+    numRows = oddsDF.shape[0]
+    oddsIndex = 0
+    # Iterate through each pair of rows in oddsDF manually
+    # Build a dictionary that maps from the game (using date and both team names) to spread
+    overUnderDict = {}
+    while oddsIndex < numRows:
+        row1 = oddsDF.loc[oddsIndex, :]
+        row2 = oddsDF.loc[oddsIndex + 1, :]
+        dateStr = str(row1['Date'])
+        if len(dateStr) == 3:
+            dateStr = '0' + dateStr
+        gameStr = dateStr + '/' + row1['Team'] + '/' + row2['Team']
+        if row1['Close'] > row2['Close']:
+            gameOverUnder = row1['Close']
+        else:
+            gameOverUnder = row2['Close']
+        overUnderDict[gameStr] = gameOverUnder
+        oddsIndex += 2
+    # Get seasonal games object
+    output = msf.msf_get_data(feed='seasonal_games', league='nba', season=season, status='final', format='json',
+                              force='true')
+    #   Build dictionary that maps from teamID to TeamName (that matches odds CSV)
+    teams = output['references']['teamReferences']
+    teamDict = {}
+    for team in teams:
+        if team['city'] == 'Los Angeles':
+            teamName = 'LA' + team['name']
+        else:
+            teamName = team['city'].replace(' ', '')
+        teamDict[team['id']] = teamName
+    # Loop through each game, find spread using spreadDict and add to gameDF
+    games = output['games']
+    for game in games:
+        if game['schedule']['id'] not in gameDF.index:
+            continue
+        dateObj = RAPM.convertDatetimeString(game['schedule']['startTime']) - timedelta(hours=4)
+        awayTeamID = game['schedule']['awayTeam']['id']
+        homeTeamID = game['schedule']['homeTeam']['id']
+        gameStr = dateObj.strftime('%m%d') + '/' + teamDict[awayTeamID] + '/' + teamDict[homeTeamID]
+        if gameStr not in overUnderDict:
+            continue
+        gameDF.loc[game['schedule']['id'], 'overUnder'] = overUnderDict[gameStr]
+
+    basePath = RAPM.getBasePath(season, '', '', 'gameData')
+    gameDF.to_csv(basePath + '-games.csv')
+
 
 def main():
     # Create instance of MySportsFeeds API and authenticate
     msf = MySportsFeeds('2.1', verbose=False)
     msf.authenticate(config.MySportsFeeds_key, "MYSPORTSFEEDS")
 
-    season = '2016-2017-regular'
-
-    # mergeOddsToGameData(msf, season)
+    seasons = ['2016-2017-regular', '2017-2018-regular', '2018-2019-regular', '2019-2020-regular']
+    for season in seasons:
+        mergeOverUnderToGameData(msf, season)
 
 
 if __name__ == '__main__':

@@ -285,7 +285,7 @@ def simulateSeasonPicks(season):
     currentSeasonDF.to_csv(basePath + '-games.csv')
 
 
-# Given a season and threshold of when to make picks, assess the accuracy and frequency of the picks
+# Given a season and threshold of when to make picks, assess the accuracy and frequency of the picks ATS
 def assessSeasonSpreadPicks(season, threshold):
     # Load game data into dataframe
     df = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
@@ -303,7 +303,7 @@ def assessSeasonSpreadPicks(season, threshold):
         projectedSpread = row['predAwayScore'] - row['predHomeScore']
         vegasSpread = row['spread']
         actualScoreDiff = row['awayScore'] - row['homeScore']
-        if abs(projectedSpread - vegasSpread) > threshold:
+        if abs(projectedSpread - vegasSpread) >= threshold:
             numPicks += 1
             # Assess if pick was correct
             if projectedSpread < vegasSpread and actualScoreDiff < vegasSpread:
@@ -318,7 +318,40 @@ def assessSeasonSpreadPicks(season, threshold):
     print('\t%.3f picks made per day, %.3f percent of all games bet on, ' % ((numPicks / numDays), (numPicks / numGames)), numPicks, ' total', sep='')
     print('\tRecord: ', numCorrect, '-', numPicks - numCorrect - numPushes, '-', numPushes, ' (%.5f)' % (numCorrect / (numPicks - numPushes)), sep='')
 
-# TODO: Assess Season O/U Picks
+
+# Given a season and threshold of when to make picks, assess the accuracy and frequency of the Over/Under picks
+def assessSeasonOverUnderPicks(season, threshold):
+    # Load game data into dataframe
+    df = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
+    # Iterate through rows, make picks based on spread, and then check the actual outcome
+    numPicks = 0
+    numCorrect = 0
+    numPushes = 0
+    daySet = set()
+    startingIndex = 0
+    for index, row in df.iloc[startingIndex:].iterrows():
+        # Add date to set of unique dates
+        if row['date'] not in daySet:
+            daySet.add(row['date'])
+        # Assess projected spread against Vegas spread
+        projectedTotal = row['predAwayScore'] + row['predHomeScore']
+        vegasTotal = row['overUnder']
+        actualTotal = row['awayScore'] + row['homeScore']
+        if abs(projectedTotal - vegasTotal) >= threshold:
+            numPicks += 1
+            # Assess if pick was correct
+            if projectedTotal < vegasTotal and actualTotal < vegasTotal:
+                numCorrect += 1
+            if projectedTotal > vegasTotal and actualTotal > vegasTotal:
+                numCorrect += 1
+            if actualTotal == vegasTotal:
+                numPushes += 1
+    numGames = df.shape[0]
+    numDays = len(daySet)
+    print(season[:9], ' results with threshold = ', threshold, sep='')
+    print('\t%.3f picks made per day, %.3f percent of all games bet on, ' % ((numPicks / numDays), (numPicks / numGames)), numPicks, ' total', sep='')
+    print('\tRecord: ', numCorrect, '-', numPicks - numCorrect - numPushes, '-', numPushes, ' (%.5f)' % (numCorrect / (numPicks - numPushes)), sep='')
+
 
 # Given a season and dataframe with game input data, output dataframe with predictions for each game
 def predictGames(season, gameDF):
@@ -367,7 +400,7 @@ def logPerformance(season, threshold):
         projectedSpread = row['predAwayScore'] - row['predHomeScore']
         vegasSpread = row['spread']
         actualScoreDiff = row['awayScore'] - row['homeScore']
-        if abs(projectedSpread - vegasSpread) > threshold:
+        if abs(projectedSpread - vegasSpread) >= threshold:
             if indexMSE not in perfDict:
                 perfDict[indexMSE] = [0, 0, 0]
             # Assess if pick was correct
@@ -411,8 +444,10 @@ def main():
     # simulateSeasonPicks(season)
 
     for threshold in range(3, 16):
-        assessSeasonSpreadPicks(season, threshold)
-        assessSeasonSpreadPicks(season, threshold + 0.5)
+        # assessSeasonSpreadPicks(season, threshold)
+        # assessSeasonSpreadPicks(season, threshold + 0.5)
+        assessSeasonOverUnderPicks(season, threshold)
+        assessSeasonOverUnderPicks(season, threshold + 0.5)
 
     # logPerformance(season, 6)
     # logPerformance(season, 7)

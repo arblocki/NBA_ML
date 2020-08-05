@@ -5,6 +5,7 @@ from src.config import config
 from ohmysportsfeedspy import MySportsFeeds
 
 def getTodaySpreads(gameDF):
+    # Get spreads from Bovada
     nbaSpreads = requests.get('https://api.the-odds-api.com/v3/odds',
     params={
         'api_key': config.oddsAPI_key,
@@ -16,6 +17,18 @@ def getTodaySpreads(gameDF):
     if not nbaSpreadsJSON['success']:
         print('There was a problem with the sports request:', nbaSpreadsJSON['msg'])
 
+    # Get OverUnders from Bovada
+    nbaTotals = requests.get('https://api.the-odds-api.com/v3/odds',
+    params={
+        'api_key': config.oddsAPI_key,
+        'mkt': 'totals',
+        'region': 'us',
+        'sport': 'basketball_nba',
+    })
+    nbaTotalsJSON = json.loads(nbaTotals.text)
+    if not nbaTotalsJSON['success']:
+        print('There was a problem with the sports request:', nbaTotalsJSON['msg'])
+
     # Import dict that maps from team abbreviation to full name
     teamDict = {}
     teamDictFilename = '../features/dictionaries/teamAbbrevToName.json'
@@ -23,7 +36,7 @@ def getTodaySpreads(gameDF):
         teamDict = json.load(inFile)
 
     # Create dictionary for each game
-    spreadArray = []
+    oddsArray = []
     for game in nbaSpreadsJSON['data']:
         homeTeam = game['home_team']
         if game['teams'][0] == homeTeam:
@@ -33,20 +46,34 @@ def getTodaySpreads(gameDF):
             awayTeam = game['teams'][0]
             homeTeamIndex = 1
         spread = -101
+        total = -101
         for site in game['sites']:
             if site['site_key'] == 'bovada':
                 spread = site['odds']['spreads']['points'][homeTeamIndex]
+        # Find total for this game
+        for gameTotal in nbaSpreadsJSON['data']:
+            if gameTotal['teams'][homeTeamIndex] == homeTeam:
+                for siteTotal in gameTotal['sites']:
+                    if siteTotal['site_key'] == 'bovada':
+                        total = siteTotal['odds']['totals']['points'][0]
+
         gameDict = {
             'homeTeam': homeTeam,
             'awayTeam': awayTeam,
             'spread': spread,
+            'overUnder': total,
         }
-        spreadArray.append(gameDict)
-    # Match each game in gameDF with one in our spread array then update the spread
+        if spread != -101 or total != -101:
+            oddsArray.append(gameDict)
+
+    # Match each game in gameDF with one in our spread array then update the spread and Over/Under
     for index, row in gameDF.iterrows():
-        for game in spreadArray:
+        for game in oddsArray:
             if game['homeTeam'] == teamDict[row['homeTeam']] and game['awayTeam'] == teamDict[row['awayTeam']]:
+                print('Setting ', row['awayTeam'], '-', row['homeTeam'], ' to ', game['spread'], sep='')
+                print('\tOverUnder at ', game['overUnder'])
                 gameDF.loc[index, 'spread'] = game['spread']
+                gameDF.loc[index, 'overUnder'] = game['overUnder']
                 break
 
     return gameDF
