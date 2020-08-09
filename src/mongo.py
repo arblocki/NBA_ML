@@ -1,3 +1,4 @@
+# MongoDB
 
 import pymongo
 import pandas as pd
@@ -194,8 +195,8 @@ def updateTodayGames(msf, client, season):
     updateGames(msf, client, season, df)
 
 
-# Update games from yesterday with final score and bet results
-def updateYesterdayGames(client, season, game):
+# Update a game from yesterday with final score and bet results
+def updateYesterdayGame(client, season, game):
     # Get year's string to access database
     seasonSubstr = getSeasonStr(season)
     db = client[seasonSubstr]
@@ -264,6 +265,8 @@ def main():
     # df = pd.read_csv('../features/gameData/' + season + 'games.csv').set_index('gameID', drop=False)
     # updateTodayGames(msf, client, season)
     # insertUnplayedGames(msf, client, season)
+    df = pd.read_csv('../features/gameData/20200806-games.csv').set_index('gameID', drop=False)
+    updateGames(msf, client, season, df)
 
     client.close()
 

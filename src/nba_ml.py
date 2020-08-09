@@ -6,7 +6,7 @@ from ohmysportsfeedspy import MySportsFeeds
 from src.config import config
 from src.data_extract import getUpcomingGameData
 from src.model import predictGames
-from src.mongo import updateTodayGames, updateYesterdayGames
+from src.mongo import updateTodayGames, updateYesterdayGame
 from src.odds import getTodaySpreads
 from src import RAPM
 from datetime import datetime, timedelta
@@ -26,10 +26,42 @@ def updateRAPMFeatures(msf, season, yesterdayStr):
     RAPM.exportPbpDataToJSON(currentUnits, currentPoints, currentWeights, '../features/RAPM-inputs/' + season)
     RAPM.exportPlayerRatings(newRatings, playerDict, '../features/RAPM-ratings/' + season)
 
-# Update
+
+# Update the fourFactorsInputs with a pervious day's games
+def updateFourFactorsInputs(season, boxscoreData):
+    fourFactorDF = pd.read_csv('../features/fourFactorsInputs/' + season + '-4F-inputs.csv').set_index('id', drop=True)
+    awayID = boxscoreData['game']['awayTeam']['id']
+    awayStats = boxscoreData['stats']['away']['teamStats'][0]
+    homeID = boxscoreData['game']['homeTeam']['id']
+    homeStats = boxscoreData['stats']['home']['teamStats'][0]
+
+    # Add stats from this game onto the existing data
+    fourFactorDF.loc[awayID, 'OppFG'] += homeStats['fieldGoals']['fgMade']
+    fourFactorDF.loc[awayID, 'Opp3P'] += homeStats['fieldGoals']['fg3PtMade']
+    fourFactorDF.loc[awayID, 'OppFGA'] += homeStats['fieldGoals']['fgAtt']
+    fourFactorDF.loc[awayID, 'OppFT'] += homeStats['freeThrows']['ftMade']
+    fourFactorDF.loc[awayID, 'OppFTA'] += homeStats['freeThrows']['ftAtt']
+    fourFactorDF.loc[awayID, 'OppORB'] += homeStats['rebounds']['offReb']
+    fourFactorDF.loc[awayID, 'OppDRB'] += homeStats['rebounds']['defReb']
+    fourFactorDF.loc[awayID, 'OppTOV'] += homeStats['defense']['tov']
+
+    fourFactorDF.loc[homeID, 'OppFG'] += awayStats['fieldGoals']['fgMade']
+    fourFactorDF.loc[homeID, 'Opp3P'] += awayStats['fieldGoals']['fg3PtMade']
+    fourFactorDF.loc[homeID, 'OppFGA'] += awayStats['fieldGoals']['fgAtt']
+    fourFactorDF.loc[homeID, 'OppFT'] += awayStats['freeThrows']['ftMade']
+    fourFactorDF.loc[homeID, 'OppFTA'] += awayStats['freeThrows']['ftAtt']
+    fourFactorDF.loc[homeID, 'OppORB'] += awayStats['rebounds']['offReb']
+    fourFactorDF.loc[homeID, 'OppDRB'] += awayStats['rebounds']['defReb']
+    fourFactorDF.loc[homeID, 'OppTOV'] += awayStats['defense']['tov']
+
+    fourFactorDF.to_csv('../features/fourFactorsInputs/' + season + '-4F-inputs.csv')
+
+
+# Update gameData and features with data from yesterday's games
 #   Update CSVs with final scores
 #   Update Mongo with final scores and bet outcomes
 #   Update RAPM inputs, ratings, and stints
+#   Update Four Factor inputs
 def updateYesterdayData(msf, client, season):
     yesterdayStr = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
     print('Running for yesterday\'s date: ', yesterdayStr, sep='')
@@ -40,11 +72,15 @@ def updateYesterdayData(msf, client, season):
         print('Analyzing ', len(output['games']), ' games from yesterday', sep='')
         yesterdayDF = pd.read_csv('../features/gameData/today-games.csv').set_index('gameID', drop=True)
         for game in output['games']:
+            gameID = game['schedule']['id']
             # Update today-games.csv w/ final scores
-            yesterdayDF.loc[game['schedule']['id'], 'awayScore'] = game['score']['awayScoreTotal']
-            yesterdayDF.loc[game['schedule']['id'], 'homeScore'] = game['score']['homeScoreTotal']
+            yesterdayDF.loc[gameID, 'awayScore'] = game['score']['awayScoreTotal']
+            yesterdayDF.loc[gameID, 'homeScore'] = game['score']['homeScoreTotal']
             # Update w/ final score and bet result in Mongo
-            updateYesterdayGames(client, season, game)
+            updateYesterdayGame(client, season, game)
+            # Update 4 Factors inputs with data from this game
+            boxscoreData = msf.msf_get_data(feed='game_boxscore', league='nba', season=season, game=gameID, format='json', force='true')
+            updateFourFactorsInputs(season, boxscoreData)
         #   Append today-games.csv onto season-games.csv
         currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
         newDF = pd.concat([currentSeasonDF, yesterdayDF])

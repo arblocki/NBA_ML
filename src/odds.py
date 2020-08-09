@@ -45,16 +45,17 @@ def getTodaySpreads(gameDF):
         else:
             awayTeam = game['teams'][0]
             homeTeamIndex = 1
-        spread = -101
-        total = -101
+        spread = -100
+        total = -100
+        oddsSite = 'bovada'
         for site in game['sites']:
-            if site['site_key'] == 'bovada':
+            if site['site_key'] == oddsSite:
                 spread = site['odds']['spreads']['points'][homeTeamIndex]
         # Find total for this game
-        for gameTotal in nbaSpreadsJSON['data']:
+        for gameTotal in nbaTotalsJSON['data']:
             if gameTotal['teams'][homeTeamIndex] == homeTeam:
                 for siteTotal in gameTotal['sites']:
-                    if siteTotal['site_key'] == 'bovada':
+                    if siteTotal['site_key'] == oddsSite:
                         total = siteTotal['odds']['totals']['points'][0]
 
         gameDict = {
@@ -63,7 +64,7 @@ def getTodaySpreads(gameDF):
             'spread': spread,
             'overUnder': total,
         }
-        if spread != -101 or total != -101:
+        if spread != -100 and total != -100:
             oddsArray.append(gameDict)
 
     # Match each game in gameDF with one in our spread array then update the spread and Over/Under

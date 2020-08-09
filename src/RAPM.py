@@ -478,32 +478,32 @@ def main():
     season = '2019-2020-regular'
     # addDateStintsToCSV(season, '20200728', 100)
     # outputStintCSV(msf, season)
-    # dateStart = ''
-    # dateEnd = ''
-    # printRatings = False
+    dateStart = ''
+    dateEnd = ''
+    printRatings = True
 
-    # # for season in seasons:
-    # ratingBasePath = getBasePath(season, dateStart, dateEnd, 'RAPM-ratings')
-    # inputBasePath = getBasePath(season, dateStart, dateEnd, 'RAPM-inputs')
-    #
+    # for season in seasons:
+    ratingBasePath = getBasePath(season, dateStart, dateEnd, 'RAPM-ratings')
+    inputBasePath = getBasePath(season, dateStart, dateEnd, 'RAPM-inputs')
+
     # if config.debug: print("Analyzing play-by-play data for " + season + "... ")
     # units, points, weights = extractPbpData(msf, season, dateStart, dateEnd)
-    # # unitsImported, pointsImported, weightsImported = importPbpDataFromJSON(inputBasePath)
-    #
+    unitsImported, pointsImported, weightsImported = importPbpDataFromJSON(inputBasePath)
+
     # if config.debug: print("Getting player names...")
-    # playerDict = getPlayerNames(msf, season)
-    #
+    playerDict = getPlayerNames(msf, season)
+
     # if config.debug: print("exporting play-by-play to JSON... ")
     # exportPbpDataToJSON(units, points, weights, inputBasePath)
-    #
+
     # if config.debug: print("Calculating RAPM...")
     # ratings = calculateRAPM(units, points, weights)
-    # # ratingsImported = calculateRAPM(unitsImported, pointsImported, weightsImported)
-    #
-    # if printRatings:
-    #     for rating in ratings:
-    #         print(rating[0], "{}".format(playerDict[rating[0]]), "{0:.3f}".format(rating[1]))
-    #
+    ratingsImported = calculateRAPM(unitsImported[23873:], pointsImported[23873:], weightsImported[23873:])
+
+    if printRatings:
+        for rating in ratingsImported:
+            print(rating[0], "{}".format(playerDict[int(rating[0])]), "{0:.3f}".format(rating[1]))
+
     # if config.debug: print("Export RAPM ratings...")
     # exportPlayerRatings(ratings, playerDict, ratingBasePath)
 
