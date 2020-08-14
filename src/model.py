@@ -443,7 +443,7 @@ def main():
     # for i in range(5):
     # simulateSeasonPicks(season)
 
-    for threshold in range(3, 16):
+    for threshold in range(2, 16):
         # assessSeasonSpreadPicks(season, threshold)
         # assessSeasonSpreadPicks(season, threshold + 0.5)
         assessSeasonOverUnderPicks(season, threshold)

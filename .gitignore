@@ -6,3 +6,5 @@ features
 azure-functions-core-tools
 docs
 requirements.txt
+.tmp.drivedownload
+NBA_daily_script

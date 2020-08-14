@@ -97,9 +97,10 @@ def predictTodayGames(msf, client, season):
     print('Running for today\'s date: ', todayStr, sep='')
 
     # Get input dataframe for today's games
-    print('Getting upcoming game data...')
-    gameDF = getUpcomingGameData(msf, season, todayStr)
+    # print('Getting upcoming game data...')
+    # gameDF = getUpcomingGameData(msf, season, todayStr)
     print('Training models and predicting today\'s games')
+    gameDF = pd.read_csv('../features/gameData/today-games.csv')
     gameDF = predictGames(season, gameDF)
     print('Getting today\'s spreads')
     gameDF = getTodaySpreads(gameDF)
@@ -130,9 +131,9 @@ def main():
     season = '2019-2020-regular'
 
     # updateYesterdayData(msf, client, season)
-    # predictTodayGames(msf, client, season)
+    predictTodayGames(msf, client, season)
 
-    updateTodaySpreads(msf, client, season)
+    # updateTodaySpreads(msf, client, season)
 
 if __name__ == '__main__':
     main()
