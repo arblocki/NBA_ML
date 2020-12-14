@@ -2,13 +2,14 @@
 
 from ohmysportsfeedspy import MySportsFeeds
 from src.config import config
+from src.injuries import getInjuryDict
 from src import RAPM
 
 import simplejson as json
 import numpy as np
 import pandas as pd
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 
 # Given a timestamp in UTC ISO-6801 format, return a string (YYYYMMDD) of the previous date in EST
@@ -17,6 +18,36 @@ def getPreviousDay(timestamp):
     estDate = date - timedelta(hours=4)
     dayBefore = estDate - timedelta(days=1)
     return dayBefore.strftime('%Y%m%d')
+
+
+# Update the fourFactorsInputs with a game from yesterday
+def updateFourFactorsInputs(season, boxscoreData):
+    fourFactorDF = pd.read_csv('../features/fourFactorsInputs/' + season + '-4F-inputs.csv').set_index('id', drop=True)
+    awayID = boxscoreData['game']['awayTeam']['id']
+    awayStats = boxscoreData['stats']['away']['teamStats'][0]
+    homeID = boxscoreData['game']['homeTeam']['id']
+    homeStats = boxscoreData['stats']['home']['teamStats'][0]
+
+    # Add stats from this game onto the existing data
+    fourFactorDF.loc[awayID, 'OppFG'] += homeStats['fieldGoals']['fgMade']
+    fourFactorDF.loc[awayID, 'Opp3P'] += homeStats['fieldGoals']['fg3PtMade']
+    fourFactorDF.loc[awayID, 'OppFGA'] += homeStats['fieldGoals']['fgAtt']
+    fourFactorDF.loc[awayID, 'OppFT'] += homeStats['freeThrows']['ftMade']
+    fourFactorDF.loc[awayID, 'OppFTA'] += homeStats['freeThrows']['ftAtt']
+    fourFactorDF.loc[awayID, 'OppORB'] += homeStats['rebounds']['offReb']
+    fourFactorDF.loc[awayID, 'OppDRB'] += homeStats['rebounds']['defReb']
+    fourFactorDF.loc[awayID, 'OppTOV'] += homeStats['defense']['tov']
+
+    fourFactorDF.loc[homeID, 'OppFG'] += awayStats['fieldGoals']['fgMade']
+    fourFactorDF.loc[homeID, 'Opp3P'] += awayStats['fieldGoals']['fg3PtMade']
+    fourFactorDF.loc[homeID, 'OppFGA'] += awayStats['fieldGoals']['fgAtt']
+    fourFactorDF.loc[homeID, 'OppFT'] += awayStats['freeThrows']['ftMade']
+    fourFactorDF.loc[homeID, 'OppFTA'] += awayStats['freeThrows']['ftAtt']
+    fourFactorDF.loc[homeID, 'OppORB'] += awayStats['rebounds']['offReb']
+    fourFactorDF.loc[homeID, 'OppDRB'] += awayStats['rebounds']['defReb']
+    fourFactorDF.loc[homeID, 'OppTOV'] += awayStats['defense']['tov']
+
+    fourFactorDF.to_csv('../features/fourFactorsInputs/' + season + '-4F-inputs.csv')
 
 
 # Given a season, import the RAPM ratings from JSON file
@@ -42,6 +73,14 @@ def getPrevSeasonStr(season):
         return '2018-2019-regular'
     elif season == '2020-2021-regular':
         return '2019-2020-regular'
+    elif season == '2017-playoff':
+        return '2016-2017-regular'
+    elif season == '2018-playoff':
+        return '2017-2018-regular'
+    elif season == '2019-playoff':
+        return '2018-2019-regular'
+    elif season == '2020-playoff':
+        return '2019-2020-regular'
     raise ValueError('Invalid season given to getPrevSeasonStr')
 
 
@@ -53,134 +92,7 @@ def calculateWeightedTeamRAPM(msf, season, teamID, ratingDict, injuries=False):
     # Map from playerID to injury status
     injuryDict = {}
     if injuries:
-        injuryDict = {
-            # ATLANTA HAWKS
-            9237: 'OUT',            # Clint Capela
-            # BOSTON CELTICS
-            # BROOKLYN NETS
-            9263: 'DOUBTFUL',       # Jamal Crawford
-            10155: 'OUT',           # Taurean Prince
-            9209: 'OUT',            # Spencer Dinwiddie
-            9268: 'OUT',            # DeAndre Jordan
-            9188: 'OUT',            # Wilson Chandler
-            17252: 'OUT',           # Nicholas Claxton
-            9157: 'OUT',            # Kyrie Irving
-            9386: 'OUT',            # Kevin Durant
-            # CHARLOTTE HORNETS
-            15313: 'QUESTIONABLE',  # Ray Spalding
-            13815: 'OUT',           # Kobi Simmons
-            # CHICAGO BULLS
-            15219: 'OUT',           # Chandler Hutchison
-            13862: 'OUT',           # Luke Kornet
-            10129: 'OUT',           # Kris Dunn
-            17276: 'OUT',           # Max Strus
-            # CLEVELAND CAVALIERS
-            17231: 'OUT',           # Dylan Windler
-            9509: 'OUT',            # Dante Exum
-            # DALLAS MAVERICKS
-            10117: 'OUT',           # Dorian Finney-Smith
-            9373: 'OUT',            # Porzingis
-            15200: 'OUT',           # Luka Doncic
-            9467: 'PROBABLE',       # Seth Curry
-            9127: 'OUT',            # Courtney Lee
-            9177: 'OUT',            # Dwight Powell
-            15280: 'OUT',           # Jalen Brunson
-            9461: 'OUT',            # Willie Cauley-Stein
-            # DENVER NUGGETS
-            9197: 'OUT',            # Will Barton
-            9191: 'OUT',            # Gary Harris
-            17236: 'OUT',           # Vlatko Cancar
-            # GOLDEN STATE WARRIORS
-            9227: 'OUT',            # Kevon Looney
-            17331: 'OUT',           # Ky Bowman
-            # HOUSTON ROCKETS
-            9352: 'OUT',            # Eric Gordon
-            9387: 'DOUBTFUL',       # Russ Westbrook
-            9088: 'OUT',            # Thabo Sefolosha
-            12199: 'OUT',           # David Nwaba
-            # INDIANA PACERS
-            9402: 'OUT',            # Vic Oladipo
-            9252: 'OUT',            # Myles Turner
-            9433: 'OUT',            # TJ Warren
-            10113: 'OUT',           # Domantas Sabonis
-            9131: 'OUT',            # Jeremy Lamb
-            # LA CLIPPERS
-            15223: 'OUT',           # Landry Shamet
-            9244: 'OUT',            # Montrezl Harrell
-            9239: 'OUT',            # Patrick Beverley
-            # LA LAKERS
-            9203: 'OUT',            # KCP
-            9464: 'OUT',            # Rajon Rondo
-            9097: 'OUT',            # Avery Bradley
-            # MEMPHIS GRIZZLIES
-            15201: 'OUT',           # Jaren Jackson Jr.
-            9347: 'OUT',            # Tyus Jones
-            9313: 'OUT',            # Justise Winslow
-            # MIAMI HEAT
-            15324: 'OUT',           # Gabe Vincent
-            13742: 'OUT',           # Bam Adebayo
-            9314: 'OUT',            # Goran Dragic
-            9152: 'OUT',            # Jimmy Butler
-            17234: 'QUESTIONABLE',  # KZ Okpala
-            # MINNESOTA TIMBERWOLVES
-            9346: 'OUT',            # Karl-Anthony Towns
-            # NEW ORLEANS PELICANS
-            16958: 'QUESTIONABLE',  # Zion Williamson
-            13973: 'OUT',           # Josh Gray
-            11924: 'OUT',           # Darius Miller
-            # NEW YORK KNICKS
-            13736: 'OUT',           # Dennis Smith Jr.
-            # OKLAHOMA CITY THUNDER
-            9265: 'OUT',            # Chris Paul
-            9084: 'OUT',            # Dennis Schroder
-            17284: 'OUT',           # Isaiah Roby
-            # ORLANDO MAGIC
-            9399: 'OUT',            # Evan Fournier
-            9327: 'OUT',            # Michael Carter-Willaims
-            9406: 'OUT',            # Aaron Gordon
-            13733: 'OUT',           # Jonathan Isaac
-            9452: 'OUT',            # Al-Farouq Aminu
-            # PHILADELPHIA 76ERS
-            9418: 'DOUBTFUL',       # Joel Embiid
-            10087: 'OUT',           # Ben Simmons
-            15314: 'OUT',           # Ryan Broekhoff
-            15213: 'OUT',           # Zhaire Smith
-            # PHOENIX SUNS
-            15279: 'DOUBTFUL',      # Elie Okobo
-            9211: 'OUT',            # Aron Baynes
-            9526: 'OUT',            # Kelly Oubre Jr.
-            17292: 'OUT',           # Tariq Owens
-            # PORTLAND TRAILBLAZERS
-            9312: 'QUESTIONABLE',   # Hassan Whiteside
-            15312: 'PROBABLE',      # Jaylen Adams
-            13752: 'OUT',           # Caleb Swanigan
-            9235: 'OUT',            # Trevor Ariza
-            9510: 'OUT',            # Rodney Hood
-            # SACRAMENTO KINGS
-            9422: 'DOUBTFUL',       # Richaun Holmes
-            9086: 'QUESTIONABLE',   # Kent Bazemore
-            15199: 'OUT',           # Marvin Bagley III
-            # SAN ANTONIO SPURS
-            13755: 'DOUBTFUL',      # Derrick White
-            9099: 'OUT',            # Tyler Zeller
-            10110: 'OUT',           # Bryn Forbes
-            9512: 'OUT',            # Trey Lyles
-            9480: 'OUT',            # LaMarcus Aldridge
-            # TORONTO RAPTORS
-            10112: 'OUT',           # Patrick McCaw
-            17211: 'QUESTIONABLE',  # Oshae Brissett
-            # UTAH JAZZ
-            13741: 'QUESTIONABLE',  # Donovan Mitchell
-            17320: 'PROBABLE',      # Juwan Morgan
-            17269: 'OUT',           # Nigel Williams-Goss
-            9114: 'OUT',            # Bojan Bogdanovic
-            # WASHINGTON WIZARDS
-            9405: 'QUESTIONABLE',   # Shabazz Napier
-            17315: 'OUT',           # Garrison Matthews
-            9523: 'OUT',            # Bradley Beal
-            9522: 'OUT',            # John Wall
-            10109: 'OUT',           # Davis Bertans
-        }
+        injuryDict = getInjuryDict()
     nameDict = {}
     # if injuries:
     #     injuries = msf.msf_get_data(feed='player_injuries', league='nba', format='json', force='true')
@@ -196,6 +108,8 @@ def calculateWeightedTeamRAPM(msf, season, teamID, ratingDict, injuries=False):
         minutesPerGame = player['stats']['miscellaneous']['minSecondsPerGame'] / 60
         minPerGameByPID[player['player']['id']] = minutesPerGame
         totalMinPerGame += minutesPerGame
+    if len(playerIDs) == 0:
+        return 0
     avgMinPerGame = totalMinPerGame / len(playerIDs)
     teamTotalRAPM = 0
     # Sum every player's weightedRAPM ((minutesPerGame / teamAverageMinutesPerGame) * rating)
@@ -214,7 +128,10 @@ def calculateWeightedTeamRAPM(msf, season, teamID, ratingDict, injuries=False):
         rating = ratingDict[PID]
         minPerGame = minPerGameByPID[PID]
         teamTotalRAPM += (minPerGame / avgMinPerGame) * rating
-    weightedTeamRAPM = teamTotalRAPM / (len(playerIDs) - numSkipped)
+    if (len(playerIDs) - numSkipped) != 0:
+        weightedTeamRAPM = teamTotalRAPM / (len(playerIDs) - numSkipped)
+    else:
+        weightedTeamRAPM = 0
 
     return weightedTeamRAPM
 
@@ -229,8 +146,19 @@ def getPrevSeasonWeightedTeamRAPM(msf, season, teamID):
 # Given a team and time-frame, get the weighted team RAPM
 # Used for current seasons
 def getTimeframeRAPM(msf, season, numStints, teamID):
+    isPlayoff = (season[5:] == 'playoff')
     # Import RAPM inputs
     units, points, weights = RAPM.importPbpDataFromJSON(RAPM.getBasePath(season, '', '', 'RAPM-inputs'))
+    if isPlayoff:
+        regSeasonStr = getPrevSeasonStr(season)
+        regSeasonUnits, regSeasonPoints, regSeasonWeights = RAPM.importPbpDataFromJSON(RAPM.getBasePath(regSeasonStr, '', '', 'RAPM-inputs'))
+        regSeasonUnits.extend(units)
+        regSeasonPoints.extend(points)
+        regSeasonWeights.extend(weights)
+        units, points, weights = regSeasonUnits, regSeasonPoints, regSeasonWeights
+        numStints = len(regSeasonPoints) + numStints
+    if numStints == 0:
+        return 0
     ratings = RAPM.calculateRAPM(units[:numStints], points[:numStints], weights[:numStints])
     ratingDict = {}
     for rating in ratings:
@@ -239,10 +167,42 @@ def getTimeframeRAPM(msf, season, numStints, teamID):
     return calculateWeightedTeamRAPM(msf, season, teamID, ratingDict, injuries=False)
 
 
+def combineSeasonStats(regSeasonStats, seasonalStats):
+    combinedSeasonStats = {}
+    combinedSeasonStats['fieldGoals'] = {}
+    combinedSeasonStats['defense'] = {}
+    combinedSeasonStats['freeThrows'] = {}
+    combinedSeasonStats['rebounds'] = {}
+
+    combinedSeasonStats['fieldGoals']['fgMade'] = regSeasonStats['fieldGoals']['fgMade'] + seasonalStats['fieldGoals']['fgMade']
+    combinedSeasonStats['fieldGoals']['fg3PtMade'] = regSeasonStats['fieldGoals']['fg3PtMade'] + seasonalStats['fieldGoals']['fg3PtMade']
+    combinedSeasonStats['fieldGoals']['fgAtt'] = regSeasonStats['fieldGoals']['fgAtt'] + seasonalStats['fieldGoals']['fgAtt']
+    combinedSeasonStats['defense']['tov'] = regSeasonStats['defense']['tov'] + seasonalStats['defense']['tov']
+    combinedSeasonStats['freeThrows']['ftAtt'] = regSeasonStats['freeThrows']['ftAtt'] + seasonalStats['freeThrows']['ftAtt']
+    combinedSeasonStats['rebounds']['offReb'] = regSeasonStats['rebounds']['offReb'] + seasonalStats['rebounds']['offReb']
+    combinedSeasonStats['rebounds']['defReb'] = regSeasonStats['rebounds']['defReb'] + seasonalStats['rebounds']['defReb']
+    combinedSeasonStats['freeThrows']['ftMade'] = regSeasonStats['freeThrows']['ftMade'] + seasonalStats['freeThrows']['ftMade']
+
+    return combinedSeasonStats
+
+
 # Given a team's seasonal stats, output the Offensive and Defensive Four Factors
 def calculateFourFactors(season, teamID, seasonalStats):
     teamFourFactors = []
     fourFactorsDF = pd.read_csv('../features/fourFactorsInputs/' + season + '-4F-inputs.csv').set_index('id', drop=False)
+    # If this is a playoff period, combine it with regular season stats
+    if season[5:] == 'playoff':
+        regSeasonStr = getPrevSeasonStr(season)
+        regSeasonDF = pd.read_csv('../features/fourFactorsInputs/' + regSeasonStr + '-4F-inputs.csv').set_index('id', drop=False)
+        fourFactorsDF.loc[teamID, 'OppFG'] += regSeasonDF.loc[teamID, 'OppFG']
+        fourFactorsDF.loc[teamID, 'Opp3P'] += regSeasonDF.loc[teamID, 'Opp3P']
+        fourFactorsDF.loc[teamID, 'OppFGA'] += regSeasonDF.loc[teamID, 'OppFGA']
+        fourFactorsDF.loc[teamID, 'OppTOV'] += regSeasonDF.loc[teamID, 'OppTOV']
+        fourFactorsDF.loc[teamID, 'OppFTA'] += regSeasonDF.loc[teamID, 'OppFTA']
+        fourFactorsDF.loc[teamID, 'OppORB'] += regSeasonDF.loc[teamID, 'OppORB']
+        fourFactorsDF.loc[teamID, 'OppDRB'] += regSeasonDF.loc[teamID, 'OppDRB']
+        fourFactorsDF.loc[teamID, 'OppFT'] += regSeasonDF.loc[teamID, 'OppFT']
+
     teamOppStats = fourFactorsDF.loc[teamID]
     # Calculate effective FG%
     FG = seasonalStats['fieldGoals']['fgMade']
@@ -291,7 +251,8 @@ def extractBasicData(stats):
     # 'awayRebPerGame', 'awayAstPerGame', 'awayPtsPerGame', 'awayTovPerGame', 'awayStlPerGame', 'awayBlkPerGame',
     # 'awayBlkAgainstPerGame', 'awayPtsAgainstPerGame', 'awayFoulsPerGame', 'awayFoulsDrawnPerGame',
     # 'awayFoulPersPerGame', 'awayFoulPersDrawnPerGame', 'awayPlusMinusPerGame', 'awayWinPct'
-    basicData = [stats['gamesPlayed'],
+    gamesPlayed = stats['gamesPlayed']
+    basicData = [gamesPlayed,
 
                  stats['fieldGoals']['fg2PtAttPerGame'],
                  stats['fieldGoals']['fg2PtMadePerGame'],
@@ -331,6 +292,56 @@ def extractBasicData(stats):
     return basicData
 
 
+# Same as above function, but adds regular season stats in
+#   Have to calculate FGPct's manually
+def extractBasicPlayoffData(regSeasonStats, stats):
+    gamesPlayed = stats['gamesPlayed'] + regSeasonStats['gamesPlayed']
+    totalWins = stats['standings']['wins'] + regSeasonStats['standings']['wins']
+    totalLosses = stats['standings']['losses'] + regSeasonStats['standings']['losses']
+    basicData = [gamesPlayed,
+
+                 (stats['fieldGoals']['fg2PtAtt'] + regSeasonStats['fieldGoals']['fg2PtAtt']) / gamesPlayed,
+                 (stats['fieldGoals']['fg2PtMade'] + regSeasonStats['fieldGoals']['fg2PtMade']) / gamesPlayed,
+                 (stats['fieldGoals']['fg2PtMade'] + regSeasonStats['fieldGoals']['fg2PtMade']) /
+                 (stats['fieldGoals']['fg2PtAtt'] + regSeasonStats['fieldGoals']['fg2PtAtt']),
+                 (stats['fieldGoals']['fg3PtAtt'] + regSeasonStats['fieldGoals']['fg3PtAtt']) / gamesPlayed,
+                 (stats['fieldGoals']['fg3PtMade'] + regSeasonStats['fieldGoals']['fg3PtMade']) / gamesPlayed,
+                 (stats['fieldGoals']['fg3PtMade'] + regSeasonStats['fieldGoals']['fg3PtMade']) /
+                 (stats['fieldGoals']['fg3PtAtt'] + regSeasonStats['fieldGoals']['fg3PtAtt']),
+                 (stats['fieldGoals']['fgAtt'] + regSeasonStats['fieldGoals']['fgAtt']) / gamesPlayed,
+                 (stats['fieldGoals']['fgMade'] + regSeasonStats['fieldGoals']['fgMade']) / gamesPlayed,
+                 (stats['fieldGoals']['fgMade'] + regSeasonStats['fieldGoals']['fgMade']) /
+                 (stats['fieldGoals']['fgAtt'] + regSeasonStats['fieldGoals']['fgAtt']),
+
+                 (stats['freeThrows']['ftAtt'] + regSeasonStats['freeThrows']['ftAtt']) / gamesPlayed,
+                 (stats['freeThrows']['ftMade'] + regSeasonStats['freeThrows']['ftMade']) / gamesPlayed,
+                 (stats['freeThrows']['ftMade'] + regSeasonStats['freeThrows']['ftMade']) /
+                 (stats['freeThrows']['ftAtt'] + regSeasonStats['freeThrows']['ftAtt']),
+
+                 (stats['rebounds']['offReb'] + regSeasonStats['rebounds']['offReb']) / gamesPlayed,
+                 (stats['rebounds']['defReb'] + regSeasonStats['rebounds']['defReb']) / gamesPlayed,
+                 (stats['rebounds']['reb'] + regSeasonStats['rebounds']['reb']) / gamesPlayed,
+
+                 (stats['offense']['ast'] + regSeasonStats['offense']['ast']) / gamesPlayed,
+                 (stats['offense']['pts'] + regSeasonStats['offense']['pts']) / gamesPlayed,
+
+                 (stats['defense']['tov'] + regSeasonStats['defense']['tov']) / gamesPlayed,
+                 (stats['defense']['stl'] + regSeasonStats['defense']['stl']) / gamesPlayed,
+                 (stats['defense']['blk'] + regSeasonStats['defense']['blk']) / gamesPlayed,
+                 (stats['defense']['blkAgainst'] + regSeasonStats['defense']['blkAgainst']) / gamesPlayed,
+                 (stats['defense']['ptsAgainst'] + regSeasonStats['defense']['ptsAgainst']) / gamesPlayed,
+
+                 (stats['miscellaneous']['fouls'] + regSeasonStats['miscellaneous']['fouls']) / gamesPlayed,
+                 (stats['miscellaneous']['foulsDrawn'] + regSeasonStats['miscellaneous']['foulsDrawn']) / gamesPlayed,
+                 (stats['miscellaneous']['foulPers'] + regSeasonStats['miscellaneous']['foulPers']) / gamesPlayed,
+                 (stats['miscellaneous']['foulPersDrawn'] + regSeasonStats['miscellaneous']['foulPersDrawn']) / gamesPlayed,
+                 (stats['miscellaneous']['plusMinus'] + regSeasonStats['miscellaneous']['plusMinus']) / gamesPlayed,
+
+                 (totalWins / (totalWins + totalLosses))]
+
+    return basicData
+
+
 # Outputs column names for CSV output
 def getColumnNames():
     columns = ['gameID']
@@ -356,6 +367,7 @@ def getColumnNames():
 
 # Given a season and timeframe, get a row of data for each game, output as Pandas dataframe
 def getFinalGameData(msf, season, dateStart, dateEnd):
+    isPlayoff = (season[5:] == 'playoff')
     # Use Seasonal feed to get list of (final) games between the dates
     if dateStart == '':  # If no date specified, get data from whole season
         output = msf.msf_get_data(feed='seasonal_games', league='nba', season=season, status='final', format='json',
@@ -399,30 +411,47 @@ def getFinalGameData(msf, season, dateStart, dateEnd):
             gameDate = RAPM.convertDatetimeString(rawGameDate)
             estGameDate = gameDate - timedelta(hours=4)
             prevDay = getPreviousDay(rawGameDate)
-            if prevDay not in stintDF.index:
-                print('Skipping gameID ', game['id'], ' from ', estGameDate.strftime('%Y/%m/%d'), ' (#', gameCount, ')',
-                      sep='')
-                gameCount += 1
-                continue
             if config.debug:
                 print('Analyzing gameID ', game['id'], ' from ', estGameDate.strftime('%Y/%m/%d'), ' (#', gameCount, ')',
                       sep='')
             for teamID in teamIDs:
                 # Get past season RAPM weighted total
                 prevSeasonStr = getPrevSeasonStr(season)
+                if isPlayoff:
+                    prevSeasonStr = getPrevSeasonStr(prevSeasonStr)
                 prevSeasonWeightedTeamRAPM = getPrevSeasonWeightedTeamRAPM(msf, prevSeasonStr, teamID)
                 gameData.append(prevSeasonWeightedTeamRAPM)
 
                 # Get current season RAPM weighted total
                 # TODO: Rewrite this section to only calculate timeframeRAPM every calendar date, instead of every game
-                numStints = stintDF.loc[prevDay, 'numStints']   # Number of stints recorded for season until day before game
+                if prevDay in stintDF.index:
+                    numStints = stintDF.loc[prevDay, 'numStints']   # Number of stints recorded for season until day before game
+                else:
+                    numStints = 0
                 timeframeRAPM = getTimeframeRAPM(msf, season, numStints, teamID)
                 gameData.append(timeframeRAPM)
 
                 # Get team data and use it to calculate four factors
-                seasonalStats = msf.msf_get_data(feed='seasonal_team_stats', date=prevDay, team=teamID, league='nba',
+                if prevDay in stintDF.index:
+                    seasonalStats = msf.msf_get_data(feed='seasonal_team_stats', date=prevDay, team=teamID, league='nba',
                                                  season=season, format='json', force='true')
-                if len(seasonalStats['teamStatsTotals']) == 0:
+                else:
+                    seasonalStats = {}
+                    seasonalStats['teamStatsTotals'] = []
+                if isPlayoff:
+                    regSeasonStr = getPrevSeasonStr(season)
+                    regSeasonStats = msf.msf_get_data(feed='seasonal_team_stats', team=teamID, league='nba',
+                                                      season=regSeasonStr, format='json', force='true')
+                    if len(seasonalStats['teamStatsTotals']) == 0:
+                        fourFactorsData = calculateFourFactors(season, teamID, regSeasonStats['teamStatsTotals'][0]['stats'])
+                        basicPerGameData = extractBasicData(regSeasonStats['teamStatsTotals'][0]['stats'])
+                    else:
+                        combinedSeasonStats = combineSeasonStats(regSeasonStats['teamStatsTotals'][0]['stats'],
+                                                                 seasonalStats['teamStatsTotals'][0]['stats'])
+                        fourFactorsData = calculateFourFactors(season, teamID, combinedSeasonStats)
+                        basicPerGameData = extractBasicPlayoffData(regSeasonStats['teamStatsTotals'][0]['stats'],
+                                                                   seasonalStats['teamStatsTotals'][0]['stats'])
+                elif len(seasonalStats['teamStatsTotals']) == 0:
                     fourFactorsData = [0] * 8
                     basicPerGameData = [0] * 29
                 else:
@@ -430,9 +459,11 @@ def getFinalGameData(msf, season, dateStart, dateEnd):
                     basicPerGameData = extractBasicData(seasonalStats['teamStatsTotals'][0]['stats'])
                 gameData.extend(fourFactorsData)
                 gameData.extend(basicPerGameData)
+            boxscoreData = msf.msf_get_data(feed='game_boxscore', league='nba', season=season, game=game['id'], format='json', force='true')
+            updateFourFactorsInputs(season, boxscoreData)
             dateObj = RAPM.convertDatetimeString(game['date'])
             dateStr = dateObj.strftime('%Y%m%d')
-            gameData.extend([game['awayScore'], game['homeScore'], dateStr, game['awayName'], game['awayID'], game['homeName'], game['homeID']])
+            gameData.extend([game['awayScore'], game['homeScore'], -100, -1, dateStr, game['awayName'], game['awayID'], game['homeName'], game['homeID']])
         except Exception as err:
             columns = getColumnNames()
             if config.debug:
@@ -443,7 +474,7 @@ def getFinalGameData(msf, season, dateStart, dateEnd):
 
         gameDataArray.append(gameData)
         gameCount += 1
-        time.sleep(2)
+        time.sleep(15)
 
     if config.debug:
         print('Getting column names...')
@@ -456,6 +487,7 @@ def getFinalGameData(msf, season, dateStart, dateEnd):
 
 # Given a date, build the input data for that day's games and return it as a dataframe
 def getUpcomingGameData(msf, season, date):
+    isPlayoff = (season[5:] == 'playoff')
     output = msf.msf_get_data(feed='daily_games', date=date, league='nba', season=season, format='json', force='true')
     if config.debug:
         print('\t', len(output['games']), ' upcoming games to analyze', sep='')
@@ -473,12 +505,26 @@ def getUpcomingGameData(msf, season, date):
         }
         games.append(gameObject)
 
-    ratingDict = importPlayerRatings(season)
+    ratingDict = {}
+    if isPlayoff:
+        regSeasonStr = getPrevSeasonStr(season)
+        units, points, weights = RAPM.importPbpDataFromJSON('../features/RAPM-inputs/' + regSeasonStr)
+        playoffUnits, playoffPoints, playoffWeights = RAPM.importPbpDataFromJSON('../features/RAPM-inputs/' + season)
+        units.extend(playoffUnits)
+        points.extend(playoffPoints)
+        weights.extend(playoffWeights)
+        ratings = RAPM.calculateRAPM(units, points, weights)
+        for rating in ratings:
+            ratingDict[int(rating[0])] = rating[1]
+    else:
+        ratingDict = importPlayerRatings(season)
 
     # Array of lists of game data, eventually will be exported as a dataframe
     gameDataArray = []
     gameCount = 0
     for game in games:
+        # if game['id'] == 58376:
+        #     continue
         try:
             gameData = [game['id']]
             teamIDs = [game['awayID'], game['homeID']]
@@ -491,6 +537,8 @@ def getUpcomingGameData(msf, season, date):
             for teamID in teamIDs:
                 # Get past season RAPM weighted total
                 prevSeasonStr = getPrevSeasonStr(season)
+                if isPlayoff:
+                    prevSeasonStr = getPrevSeasonStr(prevSeasonStr)
                 prevSeasonWeightedTeamRAPM = getPrevSeasonWeightedTeamRAPM(msf, prevSeasonStr, teamID)
                 gameData.append(prevSeasonWeightedTeamRAPM)
 
@@ -499,9 +547,23 @@ def getUpcomingGameData(msf, season, date):
                 gameData.append(weightedTeamRAPM)
 
                 # Get team data and use it to calculate four factors
-                seasonalStats = msf.msf_get_data(feed='seasonal_team_stats', date=estGameDate.strftime('%Y%m%d'),
-                                                 team=teamID, league='nba', season=season, format='json', force='true')
-                if len(seasonalStats['teamStatsTotals']) == 0:
+                seasonalStats = msf.msf_get_data(feed='seasonal_team_stats', team=teamID, league='nba',
+                                                     season=season, format='json', force='true')
+
+                if isPlayoff:
+                    regSeasonStr = getPrevSeasonStr(season)
+                    regSeasonStats = msf.msf_get_data(feed='seasonal_team_stats', team=teamID, league='nba',
+                                                      season=regSeasonStr, format='json', force='true')
+                    if len(seasonalStats['teamStatsTotals']) == 0:
+                        fourFactorsData = calculateFourFactors(season, teamID, regSeasonStats['teamStatsTotals'][0]['stats'])
+                        basicPerGameData = extractBasicData(regSeasonStats['teamStatsTotals'][0]['stats'])
+                    else:
+                        combinedSeasonStats = combineSeasonStats(regSeasonStats['teamStatsTotals'][0]['stats'],
+                                                                 seasonalStats['teamStatsTotals'][0]['stats'])
+                        fourFactorsData = calculateFourFactors(season, teamID, combinedSeasonStats)
+                        basicPerGameData = extractBasicPlayoffData(regSeasonStats['teamStatsTotals'][0]['stats'],
+                                                                   seasonalStats['teamStatsTotals'][0]['stats'])
+                elif len(seasonalStats['teamStatsTotals']) == 0:
                     fourFactorsData = [0] * 8
                     basicPerGameData = [0] * 29
                 else:
@@ -538,7 +600,12 @@ def mergeSpreadToGameData(msf, season):
     # Import the game dataset and odds CSV file
     print('Importing ', season, ' dataset and odds...', sep='')
     gameDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
-    oddsDF = pd.read_csv('../features/odds/' + season[:9] + '-odds.csv')
+    if season[5:] == 'playoff':
+        year = int(season[0:4])
+        seasonStr = str(year - 1) + '-' + str(year)
+        oddsDF = pd.read_csv('../features/odds/' + seasonStr + '-odds.csv')
+    else:
+        oddsDF = pd.read_csv('../features/odds/' + season[:9] + '-odds.csv')
     gameDF['spread'] = -100
     numRows = oddsDF.shape[0]
     oddsIndex = 0
@@ -590,7 +657,12 @@ def mergeOverUnderToGameData(msf, season):
     # Import the game dataset and odds CSV file
     print('Importing ', season, ' dataset and odds...', sep='')
     gameDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
-    oddsDF = pd.read_csv('../features/odds/' + season[:9] + '-odds.csv')
+    if season[5:] == 'playoff':
+        year = int(season[0:4])
+        seasonStr = str(year - 1) + '-' + str(year)
+        oddsDF = pd.read_csv('../features/odds/' + seasonStr + '-odds.csv')
+    else:
+        oddsDF = pd.read_csv('../features/odds/' + season[:9] + '-odds.csv')
     gameDF['overUnder'] = -100
     numRows = oddsDF.shape[0]
     oddsIndex = 0
@@ -644,7 +716,7 @@ def mergeOverUnderToGameData(msf, season):
 def mergeFourFactorsToGameData(msf, season):
     print('Merging four factors for', season)
     # Import gameData and add columns for new factors
-    gameDF = pd.read_csv('../features/gameData/20180201-games-test.csv').set_index('gameID', drop=True)
+    gameDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
     # gameDF['awayDEFG'] = 0
     # gameDF['awayOTOV'] = 0
     # gameDF['awayDTOV'] = 0
@@ -658,7 +730,7 @@ def mergeFourFactorsToGameData(msf, season):
     # gameDF['homeDRB'] = 0
     # gameDF['homeDFT'] = 0
     # Get list of gameIDs to go through
-    output = msf.msf_get_data(feed='seasonal_games', league='nba', season=season, status='final', format='json', date='from-20180201-to-20180412', force='true')
+    output = msf.msf_get_data(feed='seasonal_games', league='nba', season=season, status='final', format='json', force='true')
     games = []
     for game in output['games']:
         games.append(game['schedule']['id'])
@@ -677,7 +749,7 @@ def mergeFourFactorsToGameData(msf, season):
     #         'OppDRB': 0,
     #         'OppTOV': 0,
     #     }
-    teamDicts = pd.read_csv('../features/fourFactorsInputs/20180201-4F-inputs.csv').set_index('id', drop=True)
+    teamDicts = pd.read_csv('../features/fourFactorsInputs/' + season + '-4F-inputs.csv').set_index('id', drop=True)
     # For each game:
     gameCount = 1
     print(len(games), 'games to analyze...')
@@ -789,9 +861,13 @@ def main():
     msf = MySportsFeeds('2.1', verbose=False)
     msf.authenticate(config.MySportsFeeds_key, "MYSPORTSFEEDS")
 
-    seasons = ['2017-2018-regular']
-    for season in seasons:
-        mergeFourFactorsToGameData(msf, season)
+    season = '2020-playoff'
+    output = msf.msf_get_data(feed='seasonal_games', league='nba', season=season, status='final', format='json', force='true')
+
+    for game in output['games']:
+        gameID = game['schedule']['id']
+        boxscoreData = msf.msf_get_data(feed='game_boxscore', league='nba', season=season, game=gameID, format='json', force='true')
+        updateFourFactorsInputs(season, boxscoreData)
 
 
 if __name__ == '__main__':

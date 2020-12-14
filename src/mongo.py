@@ -1,5 +1,6 @@
 # MongoDB
 
+import simplejson as json
 import pymongo
 import pandas as pd
 from ohmysportsfeedspy import MySportsFeeds
@@ -34,18 +35,100 @@ def insertGamesFromCSV(client, season):
     db = client[seasonSubstr]
     coll = db['games']
 
+    # Import team dicts
+    teamDict = {}
+    teamDictFilename = '../features/dictionaries/teamAbbrevToName.json'
+    with open(teamDictFilename) as inFile:
+        teamDict = json.load(inFile)
+
     # Loop through dataframe and add each row as a dictionary to the list
     gameList = []
     df = pd.read_csv('../features/gameData/' + season + '-games.csv')
+    # df = pd.read_csv('../features/gameData/today-games.csv')
     for index, row in df.iterrows():
-        # Extract data
-        # TODO: Update with new schema fields
-        awayTeamDict = { 'id': row['awayID'], 'abbreviation': row['awayTeam'] }
-        homeTeamDict = { 'id': row['homeID'], 'abbreviation': row['homeTeam'] }
+        if str(row['date']) != '20200917':
+            continue
+
+        # Calculate bets being made
+        spreadThreshold = 6
+        totalThreshold = 12
+        projectedSpread = row['predAwayScore'] - row['predHomeScore']
+        projectedTotal = row['predAwayScore'] + row['predHomeScore']
+        vegasSpread = row['spread']
+        vegasTotal = row['overUnder']
+        actualScoreDiff = row['awayScore'] - row['homeScore']
+        actualTotal = row['awayScore'] + row['homeScore']
+        # Data on our spread bet
+        units = 0
+        betTeam = ''
+        status = ''
+        # Data on our Over/Under bet
+        totalUnits = 0
+        side = ''
+        totalStatus = ''
+        # Check for a spread bet being made
+        if abs(projectedSpread - vegasSpread) >= spreadThreshold:
+            units = 1
+            if projectedSpread < vegasSpread:
+                betTeam = row['homeTeam']
+                status = 'LOSS'
+                if actualScoreDiff < vegasSpread:
+                    status = 'WIN'
+            if projectedSpread > vegasSpread:
+                betTeam = row['awayTeam']
+                status = 'LOSS'
+                if actualScoreDiff > vegasSpread:
+                    status = 'WIN'
+            if actualScoreDiff == vegasSpread:
+                status = 'PUSH'
+        # Check for an Over/Under bet being made
+        if abs(projectedTotal - vegasTotal) >= totalThreshold:
+            totalUnits = 1
+            if projectedTotal < vegasTotal:
+                side = 'Under'
+                status = 'LOSS'
+                if actualTotal < vegasTotal:
+                    status = 'WIN'
+            if projectedTotal > vegasTotal:
+                side = 'Over'
+                status = 'LOSS'
+                if actualTotal > vegasTotal:
+                    status = 'WIN'
+            if actualTotal == vegasTotal:
+                status = 'PUSH'
+        # Check for game with no final scores
+        if row['homeScore'] == -1:
+            status = ''
+            totalStatus = ''
+        # Prevent picks being made on unprojected games
+        if row['predHomeScore'] == -1:
+            units = 0
+            betTeam = ''
+            totalUnits = 0
+            side = ''
+
+        # Extract data from CSV
+        namePartition = teamDict[row['awayTeam']].partition(' ')
+        city = namePartition[0]
+        team = namePartition[2]
+        if city == 'Los':
+            city = 'Los Angeles'
+            team = team.partition(' ')[2]
+        awayTeamDict = { 'id': row['awayID'], 'abbreviation': row['awayTeam'], 'city': city, 'name': team }
+        namePartition = teamDict[row['homeTeam']].partition(' ')
+        city = namePartition[0]
+        team = namePartition[2]
+        if city == 'Los':
+            city = 'Los Angeles'
+            team = team.partition(' ')[2]
+        homeTeamDict = { 'id': row['homeID'], 'abbreviation': row['homeTeam'], 'city': city, 'name': team }
         scoreDict = { 'away': row['awayScore'], 'home': row['homeScore'] }
         predScoreDict = { 'away': row['predAwayScore'], 'home': row['predHomeScore'] }
+        betDict = { 'status': status, 'team': betTeam, 'units': units }
+        totalDict = { 'status': totalStatus, 'side': side, 'units': totalUnits }
         gameDict = { 'gameID': row['gameID'], 'date': str(row['date']), 'awayTeam': awayTeamDict, 'homeTeam': homeTeamDict,
-                     'score': scoreDict, 'spread': row['spread'], 'predScore': predScoreDict }
+                     'score': scoreDict, 'spread': row['spread'], 'overUnder': row['overUnder'],
+                     'predScore': predScoreDict, 'bet': betDict, 'startTime': '', 'total': totalDict }
         gameList.append(gameDict)
 
     # Output the list to mongo using insert_many
@@ -88,6 +171,16 @@ def insertUnplayedGames(msf, client, season):
 
     result = coll.insert_many(gameList)
     print(len(result.inserted_ids), 'game objects inserted')
+
+
+# Given a DB instance, and season, delete all unplayed games from the database
+def deleteUnplayedGames(client, season):
+    seasonSubstr = getSeasonStr(season)
+    db = client[seasonSubstr]
+    coll = db['games']
+    query = { "score.away": -1 }
+    x = coll.delete_many(query)
+    print(x.deleted_count, " documents deleted.")
 
 
 # Given an MSF instance, DB instance, and season string, update all games to whatever data is locally stored
@@ -260,13 +353,18 @@ def main():
     msf = MySportsFeeds('2.1', verbose=False)
     msf.authenticate(config.MySportsFeeds_key, "MYSPORTSFEEDS")
 
-    season = '2019-2020-regular'
+    season = '2020-playoff'
 
     # df = pd.read_csv('../features/gameData/' + season + 'games.csv').set_index('gameID', drop=False)
     # updateTodayGames(msf, client, season)
+
+    deleteUnplayedGames(client, season)
     # insertUnplayedGames(msf, client, season)
-    df = pd.read_csv('../features/gameData/20200806-games.csv').set_index('gameID', drop=False)
-    updateGames(msf, client, season, df)
+
+    # insertGamesFromCSV(client, season)
+
+    # df = pd.read_csv('../features/gameData/20200806-games.csv').set_index('gameID', drop=False)
+    # updateGames(msf, client, season, df)
 
     client.close()
 

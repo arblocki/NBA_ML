@@ -474,8 +474,8 @@ def main():
     msf = MySportsFeeds('2.1', verbose=False)
     msf.authenticate(config.MySportsFeeds_key, "MYSPORTSFEEDS")
 
-    # seasons = ['2016-playoff', '2017-playoff', '2018-playoff', '2019-playoff']
-    season = '2019-2020-regular'
+    # seasons = []
+    season = '2020-playoff'
     # addDateStintsToCSV(season, '20200728', 100)
     # outputStintCSV(msf, season)
     dateStart = ''
@@ -483,7 +483,7 @@ def main():
     printRatings = True
 
     # for season in seasons:
-    ratingBasePath = getBasePath(season, dateStart, dateEnd, 'RAPM-ratings')
+    # ratingBasePath = getBasePath(season, dateStart, dateEnd, 'RAPM-ratings')
     inputBasePath = getBasePath(season, dateStart, dateEnd, 'RAPM-inputs')
 
     # if config.debug: print("Analyzing play-by-play data for " + season + "... ")
@@ -498,7 +498,7 @@ def main():
 
     # if config.debug: print("Calculating RAPM...")
     # ratings = calculateRAPM(units, points, weights)
-    ratingsImported = calculateRAPM(unitsImported[23873:], pointsImported[23873:], weightsImported[23873:])
+    ratingsImported = calculateRAPM(unitsImported[:224], pointsImported[:224], weightsImported[:224])
 
     if printRatings:
         for rating in ratingsImported:

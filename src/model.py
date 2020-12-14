@@ -1,18 +1,17 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
 from sklearn.metrics import mean_squared_error
-from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-from torch.utils.data import random_split
 from torch.backends import cudnn
 import pandas as pd
 import matplotlib.pyplot as plt
 import random
 from src.data_extract import getPrevSeasonStr
 from src.RAPM import getBasePath
+from src.objects.NN import NN
+from src.objects.CSVDataset import CSVDataset
 from math import sqrt
 from os import path
 
@@ -20,50 +19,6 @@ from os import path
 torch.manual_seed(42)
 np.random.seed(42)
 random.seed(42)
-
-
-# dataset definition
-class CSVDataset(Dataset):
-    # load the dataset
-    def __init__(self, path):
-        # load the csv file as a dataframe
-        df = pd.read_csv(path).set_index('gameID', drop=True)
-
-        # use_cuda = torch.cuda.is_available()
-        # device = torch.device("cuda:0" if use_cuda else "cpu")
-        # cudnn.benchmark = True
-
-        # store the inputs and outputs
-        self.X = df.values[:, 0:66].astype('float32')
-        self.y = df.values[:, 66:68].astype('float32')
-        # ensure target has the right shape
-        self.y = self.y.reshape((len(self.y), 2))
-
-    # number of rows in the dataset
-    def __len__(self):
-        return len(self.X)
-
-    # get a row at an index
-    def __getitem__(self, idx):
-        return [self.X[idx], self.y[idx]]
-
-    def concat(self, df):
-        # store the new inputs and outputs
-        newX = df.values[:, 0:66].astype('float32')
-        newY = df.values[:, 66:68].astype('float32')
-        # add the new data onto the existing X and y
-        self.X = np.concatenate((self.X, newX), axis=0)
-        self.y = np.concatenate((self.y, newY), axis=0)
-        # ensure target has the right shape
-        self.y = self.y.reshape((len(self.y), 2))
-
-    # get indexes for train and test rows
-    def get_splits(self, n_test=0.30):
-        # determine sizes
-        test_size = round(n_test * len(self.X))
-        train_size = len(self.X) - test_size
-        # calculate the split
-        return random_split(self, [train_size, test_size])
 
 
 # determine the supported device
@@ -79,34 +34,6 @@ def get_device():
 def df_to_tensor(df):
     device = get_device()
     return torch.from_numpy(df.values).float().to(device)
-
-
-class NN(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        self.fc1 = nn.Linear(66, 96)
-        self.fc2 = nn.Linear(96, 64)
-        self.fc3 = nn.Linear(64, 32)
-        self.fc4 = nn.Linear(32, 8)
-        self.fc5 = nn.Linear(8, 2)
-
-        self.init_weights()
-
-    def init_weights(self):
-        for fc in [self.fc1, self.fc2, self.fc3, self.fc4, self.fc5]:
-            FC_in = fc.weight.size(1)
-            nn.init.normal_(fc.weight, 0.0, 1 / sqrt(FC_in))
-            nn.init.constant_(fc.bias, 0.0)
-
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        x = F.relu(self.fc4(x))
-        x = self.fc5(x)
-
-        return x
 
 
 # Prepare the dataset by returning two DataLoaders
@@ -176,11 +103,16 @@ def plotLoss(loss, metricName='RMSE'):
     plt.show()
 
 
-# Given an array of models and a row of data, output the average of the predictions of each model
-def avgPredict(row, models):
+# Given an array of objects and a row of data, output the average of the predictions of each model
+def avgPredict(row, models, mses):
     predAwayScores = []
     predHomeScores = []
-    for model in models:
+    for index in range(len(models)):
+        model = models[index]
+        mse = mses[index]
+        if mse > 20:
+            print('Skipping model', index, 'in prediction because RMSE is', mse)
+            continue
         prediction = predict(row, model)
         predAwayScores.append(prediction[0])
         predHomeScores.append(prediction[1])
@@ -189,9 +121,9 @@ def avgPredict(row, models):
     return [predAwayAvg, predHomeAvg]
 
 
-# Train and evaluate 10 different models
+# Train and evaluate 10 different objects
 def trainModelEnsemble(train_dl, test_dl, dataset):
-    # Train 10 different models at a time
+    # Train 10 different objects at a time
     models = []
     criterions = []
     optimizers = []
@@ -228,17 +160,37 @@ def trainModelEnsemble(train_dl, test_dl, dataset):
     return models, mses
 
 
+# Get the string for the previous year's playoff
+def getPrevPlayoffStr(season):
+    if season == '2017-playoff':
+        return '2016-playoff'
+    elif season == '2018-playoff':
+        return '2017-playoff'
+    elif season == '2019-playoff':
+        return '2018-playoff'
+    elif season == '2020-playoff':
+        return '2019-playoff'
+
+
 # Given a season, simulate every day of game predictions
 #   Each date of games, train on all games from previous season and this season thus far
 #   Predict games using that model, and make spread picks if there is a projected difference above the given threshold
 def simulateSeasonPicks(season):
     prevSeasonStr = getPrevSeasonStr(season)
     twoSeasonsBackStr = getPrevSeasonStr(prevSeasonStr)
+    # if season[5:] == 'playoff':
+    #     prevSeasonStr = getPrevPlayoffStr(season)
+    #     twoSeasonsBackStr = getPrevPlayoffStr(prevSeasonStr)
     path = '../features/gameData/' + prevSeasonStr + '-games.csv'
     twoSeasonsBackDF = pd.read_csv('../features/gameData/' + twoSeasonsBackStr + '-games.csv').set_index('gameID', drop=True)
     # load the previous season dataset
     dataset = CSVDataset(path)
     dataset.concat(twoSeasonsBackDF)
+    if season[5:] == 'playoff':
+        prevPlayoffStr = getPrevPlayoffStr(season)
+        prevPlayoffDF = pd.read_csv('../features/gameData/' + prevPlayoffStr + '-games.csv').set_index('gameID', drop=True)
+        dataset.concat(prevPlayoffDF)
+
     train_dl, test_dl = prepare_data(dataset)
 
     # CUDA for PyTorch
@@ -256,7 +208,7 @@ def simulateSeasonPicks(season):
     numRowsForDate = 0
 
     models, mses = trainModelEnsemble(train_dl, test_dl, dataset)
-    rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the models used for each pick
+    rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the objects used for each pick
     print('Trained the initial model with RMSE of ', (sum(mses) / len(mses)), sep='')
 
     for index, row in currentSeasonDF.iterrows():
@@ -265,8 +217,15 @@ def simulateSeasonPicks(season):
         if nextDate != currentDate:
             # Add games from currentDate to current dataset
             # print('Adding ', numRowsForDate, ' games from ', currentDate, ' onto dataset', sep='')
-            currentDateGames = currentSeasonDF.loc[(index-numRowsForDate):index]
-            dataset.concat(currentDateGames)
+            try:
+                rangeEnd = currentSeasonDF.index.get_loc(index)
+                rangeStart = rangeEnd - numRowsForDate
+                currentDateGames = currentSeasonDF.iloc[rangeStart:rangeEnd]
+                dataset.concat(currentDateGames)
+            except Exception as err:
+                print('Error during gameID ', index, ': ', err, sep='')
+                currentSeasonDF.to_csv('../features/gameData/until-' + currentDate + '-games.csv')
+                return
             train_dl, test_dl = prepare_data(dataset)
             # print('Training on ', len(train_dl.dataset), ' games, Testing on ', len(test_dl.dataset), ' games', sep='')
             currentDate = nextDate
@@ -275,7 +234,7 @@ def simulateSeasonPicks(season):
             models, mses = trainModelEnsemble(train_dl, test_dl, dataset)
             rmseAvg = sum(mses) / len(mses)
             print('Retrained the model to ', nextDate, ' with RMSE of ', (sum(mses) / len(mses)), sep='')
-        prediction = avgPredict(row.values[0:66].astype('float32'), models)
+        prediction = avgPredict(row.values[0:78].astype('float32'), models, mses)
         currentSeasonDF.loc[index, 'predAwayScore'] = prediction[0]
         currentSeasonDF.loc[index, 'predHomeScore'] = prediction[1]
         currentSeasonDF.loc[index, 'rmsError'] = rmseAvg
@@ -314,7 +273,7 @@ def assessSeasonSpreadPicks(season, threshold):
                 numPushes += 1
     numGames = df.shape[0]
     numDays = len(daySet)
-    print(season[:9], ' results with threshold = ', threshold, sep='')
+    print(season, ' results with threshold = ', threshold, sep='')
     print('\t%.3f picks made per day, %.3f percent of all games bet on, ' % ((numPicks / numDays), (numPicks / numGames)), numPicks, ' total', sep='')
     print('\tRecord: ', numCorrect, '-', numPicks - numCorrect - numPushes, '-', numPushes, ' (%.5f)' % (numCorrect / (numPicks - numPushes)), sep='')
 
@@ -327,6 +286,8 @@ def assessSeasonOverUnderPicks(season, threshold):
     numPicks = 0
     numCorrect = 0
     numPushes = 0
+    numOvers = 0
+    numUnders = 0
     daySet = set()
     startingIndex = 0
     for index, row in df.iloc[startingIndex:].iterrows():
@@ -338,6 +299,10 @@ def assessSeasonOverUnderPicks(season, threshold):
         vegasTotal = row['overUnder']
         actualTotal = row['awayScore'] + row['homeScore']
         if abs(projectedTotal - vegasTotal) >= threshold:
+            if projectedTotal < vegasTotal:
+                numUnders += 1
+            if projectedTotal > vegasTotal:
+                numOvers += 1
             numPicks += 1
             # Assess if pick was correct
             if projectedTotal < vegasTotal and actualTotal < vegasTotal:
@@ -348,9 +313,10 @@ def assessSeasonOverUnderPicks(season, threshold):
                 numPushes += 1
     numGames = df.shape[0]
     numDays = len(daySet)
-    print(season[:9], ' results with threshold = ', threshold, sep='')
+    print(season, ' results with threshold = ', threshold, sep='')
     print('\t%.3f picks made per day, %.3f percent of all games bet on, ' % ((numPicks / numDays), (numPicks / numGames)), numPicks, ' total', sep='')
     print('\tRecord: ', numCorrect, '-', numPicks - numCorrect - numPushes, '-', numPushes, ' (%.5f)' % (numCorrect / (numPicks - numPushes)), sep='')
+    print('\t', numOvers, ' Overs, ', numUnders, ' Unders', sep='')
 
 
 # Given a season and dataframe with game input data, output dataframe with predictions for each game
@@ -364,15 +330,19 @@ def predictGames(season, gameDF):
     currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
     dataset.concat(prevSeasonDF)
     dataset.concat(currentSeasonDF)
+    if season[5:] == 'playoff':
+        prevPlayoffStr = getPrevPlayoffStr(season)
+        prevPlayoffDF = pd.read_csv('../features/gameData/' + prevPlayoffStr + '-games.csv').set_index('gameID', drop=True)
+        dataset.concat(prevPlayoffDF)
     train_dl, test_dl = prepare_data(dataset)
     print('Training on ', len(train_dl.dataset), ' games, Testing on ', len(test_dl.dataset), ' games', sep='')
 
-    # Train models
+    # Train objects
     gameDF['predAwayScore'] = -1
     gameDF['predHomeScore'] = -1
     gameDF['rmsError'] = -1
     models, mses = trainModelEnsemble(train_dl, test_dl, dataset)
-    rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the models used for each pick
+    rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the objects used for each pick
     print('Trained the initial model set with RMSE of ', (sum(mses) / len(mses)), sep='')
 
     # Set gameID as index and drop the column
@@ -380,7 +350,8 @@ def predictGames(season, gameDF):
 
     # Predict each game
     for index, row in gameDF.iterrows():
-        prediction = avgPredict(row.values[1:67].astype('float32'), models)
+        # TODO: Parameterize with num_inputs
+        prediction = avgPredict(row.values[1:79].astype('float32'), models, mses)
         gameDF.loc[index, 'predAwayScore'] = prediction[0]
         gameDF.loc[index, 'predHomeScore'] = prediction[1]
         gameDF.loc[index, 'rmsError'] = rmseAvg
@@ -438,16 +409,16 @@ def logPerformance(season, threshold):
 
 def main():
 
-    season = '2019-2020-regular'
+    season = '2020-playoff'
 
     # for i in range(5):
-    # simulateSeasonPicks(season)
+    simulateSeasonPicks(season)
 
-    for threshold in range(2, 16):
-        # assessSeasonSpreadPicks(season, threshold)
-        # assessSeasonSpreadPicks(season, threshold + 0.5)
-        assessSeasonOverUnderPicks(season, threshold)
-        assessSeasonOverUnderPicks(season, threshold + 0.5)
+    for threshold in range(0, 16):
+        assessSeasonSpreadPicks(season, threshold)
+        assessSeasonSpreadPicks(season, threshold + 0.5)
+        # assessSeasonOverUnderPicks(season, threshold)
+        # assessSeasonOverUnderPicks(season, threshold + 0.5)
 
     # logPerformance(season, 6)
     # logPerformance(season, 7)
