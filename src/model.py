@@ -4,7 +4,7 @@ import torch.nn as nn
 import numpy as np
 from sklearn.metrics import mean_squared_error
 from torch.utils.data import DataLoader
-from torch.backends import cudnn
+# from torch.backends import cudnn
 import pandas as pd
 import matplotlib.pyplot as plt
 import random
@@ -15,10 +15,11 @@ from src.objects.CSVDataset import CSVDataset
 from math import sqrt
 from os import path
 
-
 torch.manual_seed(42)
 np.random.seed(42)
 random.seed(42)
+
+num_inputs = 78
 
 
 # determine the supported device
@@ -140,11 +141,11 @@ def trainModelEnsemble(train_dl, test_dl, dataset):
 
         mse = 1000
         count = 0
-        while (sqrt(mse) > 13.5):
-            if (count != 0):
+        while sqrt(mse) > 13.5:
+            if count != 0:
                 print('\t\tRMSE on model ', i, ' was ', sqrt(mse), ', getting new random split', sep='')
                 train_dl, test_dl = prepare_data(dataset)
-            if (count == 3):
+            if count == 3:
                 print('\t\tReached third iteration, outputting result')
                 break
             for epoch in range(20):
@@ -175,7 +176,7 @@ def getPrevPlayoffStr(season):
 # Given a season, simulate every day of game predictions
 #   Each date of games, train on all games from previous season and this season thus far
 #   Predict games using that model, and make spread picks if there is a projected difference above the given threshold
-def simulateSeasonPicks(season):
+def simulatePicks(season, dateStart=None, dateEnd=None):
     prevSeasonStr = getPrevSeasonStr(season)
     twoSeasonsBackStr = getPrevSeasonStr(prevSeasonStr)
     # if season[5:] == 'playoff':
@@ -185,7 +186,7 @@ def simulateSeasonPicks(season):
     twoSeasonsBackDF = pd.read_csv('../features/gameData/' + twoSeasonsBackStr + '-games.csv').set_index('gameID', drop=True)
     # load the previous season dataset
     dataset = CSVDataset(path)
-    dataset.concat(twoSeasonsBackDF)
+    # dataset.concat(twoSeasonsBackDF)
     if season[5:] == 'playoff':
         prevPlayoffStr = getPrevPlayoffStr(season)
         prevPlayoffDF = pd.read_csv('../features/gameData/' + prevPlayoffStr + '-games.csv').set_index('gameID', drop=True)
@@ -201,9 +202,9 @@ def simulateSeasonPicks(season):
     print('Training on ', len(train_dl.dataset), ' games, Testing on ', len(test_dl.dataset), ' games', sep='')
 
     currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
-    currentSeasonDF['predAwayScore'] = -1
-    currentSeasonDF['predHomeScore'] = -1
-    currentSeasonDF['rmsError'] = -1
+    # currentSeasonDF['predAwayScore'] = -1
+    # currentSeasonDF['predHomeScore'] = -1
+    # currentSeasonDF['rmsError'] = -1
     currentDate = str(currentSeasonDF['date'].iloc[0])
     numRowsForDate = 0
 
@@ -222,6 +223,9 @@ def simulateSeasonPicks(season):
                 rangeStart = rangeEnd - numRowsForDate
                 currentDateGames = currentSeasonDF.iloc[rangeStart:rangeEnd]
                 dataset.concat(currentDateGames)
+                print('Outputting predictions up to', currentDate)
+                basePath = getBasePath(season, '', '', 'gameData')
+                currentSeasonDF.to_csv(basePath + '-games-partial.csv')
             except Exception as err:
                 print('Error during gameID ', index, ': ', err, sep='')
                 currentSeasonDF.to_csv('../features/gameData/until-' + currentDate + '-games.csv')
@@ -245,16 +249,23 @@ def simulateSeasonPicks(season):
 
 
 # Given a season and threshold of when to make picks, assess the accuracy and frequency of the picks ATS
-def assessSeasonSpreadPicks(season, threshold):
+#       Optional start and end dates for custom timeframes
+def assessSpreadPicks(season, threshold, dateStart=None, dateEnd=None):
+    unit = 10
+    print(season, ' results with threshold = ', threshold, sep='')
     # Load game data into dataframe
-    df = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
+    df = pd.read_csv('../features/gameData/' + season + '-games-partial.csv').set_index('gameID', drop=True)
     # Iterate through rows, make picks based on spread, and then check the actual outcome
     numPicks = 0
     numCorrect = 0
     numPushes = 0
+    numGames = 0
     daySet = set()
     startingIndex = 0
     for index, row in df.iloc[startingIndex:].iterrows():
+        if row['predAwayScore'] == -1 or row['predHomeScore'] == -1:
+            continue
+        numGames += 1
         # Add date to set of unique dates
         if row['date'] not in daySet:
             daySet.add(row['date'])
@@ -265,21 +276,40 @@ def assessSeasonSpreadPicks(season, threshold):
         if abs(projectedSpread - vegasSpread) >= threshold:
             numPicks += 1
             # Assess if pick was correct
+            result = 'LOSS'
             if projectedSpread < vegasSpread and actualScoreDiff < vegasSpread:
                 numCorrect += 1
+                result = 'WIN'
             if projectedSpread > vegasSpread and actualScoreDiff > vegasSpread:
                 numCorrect += 1
+                result = 'WIN'
             if actualScoreDiff == vegasSpread:
                 numPushes += 1
-    numGames = df.shape[0]
+                result = 'PUSH'
+            # print('\t\tBet on ', row['awayTeam'], '-', row['homeTeam'], ' ', row['spread'],
+            #       ', pred score was ', '%.2f' % row['predAwayScore'], '-', '%.2f' % row['predHomeScore'],
+            #       ', final score was ', row['awayScore'], '-', row['homeScore'], ' (', result, ')', sep='')
     numDays = len(daySet)
-    print(season, ' results with threshold = ', threshold, sep='')
     print('\t%.3f picks made per day, %.3f percent of all games bet on, ' % ((numPicks / numDays), (numPicks / numGames)), numPicks, ' total', sep='')
     print('\tRecord: ', numCorrect, '-', numPicks - numCorrect - numPushes, '-', numPushes, ' (%.5f)' % (numCorrect / (numPicks - numPushes)), sep='')
+    profit = (numCorrect * unit * 0.909) - ((numPicks - numCorrect - numPushes) * unit)
+    percentROI = 100 * profit / (numPicks * unit)
+    if profit < 0:
+        print('\t', '%.2f' % profit, ' with a $', unit, ' unit per bet (', '%.2f' % percentROI, '% ROI)', sep='')
+    else:
+        print('\t+', '%.2f' % profit, ' with a $', unit, ' unit per bet (', '%.2f' % percentROI, '% ROI)', sep='')
+
+
+# TODO:
+# Given a season and expected value (EV) threshold, assess the accuracy, frequency, and profitability of ML picks
+#       Optional start and end dates for custom timeframes
+def assessMLPicks(season, threshold, dateStart=None, dateEnd=None):
+    pass
 
 
 # Given a season and threshold of when to make picks, assess the accuracy and frequency of the Over/Under picks
-def assessSeasonOverUnderPicks(season, threshold):
+#       Optional start and end dates for custom timeframes
+def assessOverUnderPicks(season, threshold, dateStart=None, dateEnd=None):
     # Load game data into dataframe
     df = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
     # Iterate through rows, make picks based on spread, and then check the actual outcome
@@ -385,7 +415,7 @@ def logPerformance(season, threshold):
                 perfDict[indexMSE][1] += 1
     # Check if a performance CSV already exists
     filePath = '../features/performance/' + season + '_' + str(threshold) + '.csv'
-    if (path.exists(filePath)):
+    if path.exists(filePath):
         perfDF = pd.read_csv(filePath).set_index('rmse', drop=True)
         # Add items from this run onto the existing performance records
         for mse, record in perfDict.items():
@@ -409,14 +439,14 @@ def logPerformance(season, threshold):
 
 def main():
 
-    season = '2020-playoff'
+    season = '2019-2020-regular'
 
     # for i in range(5):
-    simulateSeasonPicks(season)
+    simulatePicks(season)
 
     for threshold in range(0, 16):
-        assessSeasonSpreadPicks(season, threshold)
-        assessSeasonSpreadPicks(season, threshold + 0.5)
+        assessSpreadPicks(season, threshold)
+        assessSpreadPicks(season, threshold + 0.5)
         # assessSeasonOverUnderPicks(season, threshold)
         # assessSeasonOverUnderPicks(season, threshold + 0.5)
 

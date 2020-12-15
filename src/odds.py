@@ -30,7 +30,6 @@ def getTodaySpreads(gameDF):
         print('There was a problem with the sports request:', nbaTotalsJSON['msg'])
 
     # Import dict that maps from team abbreviation to full name
-    teamDict = {}
     teamDictFilename = '../features/dictionaries/teamAbbrevToName.json'
     with open(teamDictFilename) as inFile:
         teamDict = json.load(inFile)

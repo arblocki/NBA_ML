@@ -21,7 +21,7 @@ class CSVDataset(Dataset):
     # store the inputs and outputs
     self.X = df.values[:, 0:num_inputs].astype('float32')
     if type == 'score':
-      self.y = df.values[:, 'awayScore':'awayWin'].astype('float32')
+      self.y = df.values[:, num_inputs:num_inputs+2].astype('float32')
     elif type == 'ml':
       self.y = df.values[:, 'awayWin':'spread'].astype('int32')
     else:
@@ -41,7 +41,7 @@ class CSVDataset(Dataset):
     # store the new inputs and outputs
     newX = df.values[:, 0:self.num_inputs].astype('float32')
     if self.type == 'score':
-      newY = df.values[:, 'awayScore':'awayWin'].astype('float32')
+      newY = df.values[:, self.num_inputs:self.num_inputs+2].astype('float32')
     elif self.type == 'ml':
       newY = df.values[:, 'awayWin':'spread'].astype('int32')
     else:
