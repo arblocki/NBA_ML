@@ -12,6 +12,7 @@ from src.data_extract import getPrevSeasonStr
 from src.RAPM import getBasePath
 from src.objects.NN import NN
 from src.objects.CSVDataset import CSVDataset
+from src.mongo import insertGamePredictions
 from math import sqrt
 from os import path
 
@@ -174,14 +175,23 @@ def getPrevPlayoffStr(season):
 
 
 # Given a season, simulate every day of game predictions
-#   Each date of games, train on all games from previous season and this season thus far
-#   Predict games using that model, and make spread picks if there is a projected difference above the given threshold
-def simulatePicks(season, dateStart=None, dateEnd=None):
+#   For each date of games, train on all games from previous season and this season thus far
+#   Predict games using that model
+#   Date parameter specifies certain date (yyyymmdd)
+#   If testID is specified, write the predictions of each game to mongoDB
+def simulatePicks(season, date=None, testID=None):
+    if testID and not date:
+        raise AttributeError('Date must be specified with testID!')
+
+    if date:
+        if len(date) != 8:
+            raise ValueError('Invalid date given: ', date)
+        print('Predicting games for', date)
+    else:
+        print('Predicting games for', season)
+
     prevSeasonStr = getPrevSeasonStr(season)
     twoSeasonsBackStr = getPrevSeasonStr(prevSeasonStr)
-    # if season[5:] == 'playoff':
-    #     prevSeasonStr = getPrevPlayoffStr(season)
-    #     twoSeasonsBackStr = getPrevPlayoffStr(prevSeasonStr)
     path = '../features/gameData/' + prevSeasonStr + '-games.csv'
     twoSeasonsBackDF = pd.read_csv('../features/gameData/' + twoSeasonsBackStr + '-games.csv').set_index('gameID', drop=True)
     # load the previous season dataset
@@ -192,14 +202,10 @@ def simulatePicks(season, dateStart=None, dateEnd=None):
         prevPlayoffDF = pd.read_csv('../features/gameData/' + prevPlayoffStr + '-games.csv').set_index('gameID', drop=True)
         dataset.concat(prevPlayoffDF)
 
-    train_dl, test_dl = prepare_data(dataset)
-
     # CUDA for PyTorch
     # use_cuda = torch.cuda.is_available()
     # device = torch.device("cuda:0" if use_cuda else "cpu")
     # cudnn.benchmark = True
-
-    print('Training on ', len(train_dl.dataset), ' games, Testing on ', len(test_dl.dataset), ' games', sep='')
 
     currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
     # currentSeasonDF['predAwayScore'] = -1
@@ -208,11 +214,21 @@ def simulatePicks(season, dateStart=None, dateEnd=None):
     currentDate = str(currentSeasonDF['date'].iloc[0])
     numRowsForDate = 0
 
+    subDF = currentSeasonDF
+    if date:
+        priorGames = currentSeasonDF.loc[currentSeasonDF['date'] < int(date)]
+        dataset.concat(priorGames)
+        subDF = currentSeasonDF.loc[currentSeasonDF['date'] == int(date)]
+        currentDate = date
+
+    train_dl, test_dl = prepare_data(dataset)
+    print('Training on ', len(train_dl.dataset), ' games, Testing on ', len(test_dl.dataset), ' games', sep='')
+
     models, mses = trainModelEnsemble(train_dl, test_dl, dataset)
     rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the objects used for each pick
     print('Trained the initial model with RMSE of ', (sum(mses) / len(mses)), sep='')
 
-    for index, row in currentSeasonDF.iterrows():
+    for index, row in subDF.iterrows():
         nextDate = str(row['date'])
         # If a new date is reached, add previous games onto dataset and reset model
         if nextDate != currentDate:
@@ -244,25 +260,48 @@ def simulatePicks(season, dateStart=None, dateEnd=None):
         currentSeasonDF.loc[index, 'rmsError'] = rmseAvg
         numRowsForDate += 1
 
-    basePath = getBasePath(season, '', '', 'gameData')
-    currentSeasonDF.to_csv(basePath + '-games.csv')
+    if testID:
+        insertGamePredictions(season, currentSeasonDF.loc[currentSeasonDF['date'] == int(date)], testID)
+
+    return currentSeasonDF
 
 
 # Given a season and threshold of when to make picks, assess the accuracy and frequency of the picks ATS
 #       Optional start and end dates for custom timeframes
 def assessSpreadPicks(season, threshold, dateStart=None, dateEnd=None):
+    if dateStart:
+        if len(dateStart) != 8:
+            raise ValueError('Invalid dateStart given: ', dateStart)
+
+        if dateEnd:
+            if len(dateEnd) != 8:
+                raise ValueError('Invalid dateEnd given: ', dateEnd)
+            print(dateStart, '-', dateEnd, ' results with threshold = ', threshold, sep='')
+        else:
+            print(dateStart, ' results with threshold = ', threshold, sep='')
+    else:
+        print(season, ' results with threshold = ', threshold, sep='')
+
     unit = 10
-    print(season, ' results with threshold = ', threshold, sep='')
-    # Load game data into dataframe
-    df = pd.read_csv('../features/gameData/' + season + '-games-partial.csv').set_index('gameID', drop=True)
+
+    # Load game data into dataframe based on what dates were specified
+    df = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
+    if dateStart and dateEnd:
+        dateStartInt = int(dateStart)
+        dateEndInt = int(dateEnd)
+        # TODO: CHECK THAT THIS COPY WORKS
+        df = df.loc[(df['date'] >= dateStartInt) & (df['date'] <= dateEndInt)]
+    elif dateStart:  # If no end date specified, use Daily Games feed for startDate
+        dateStartInt = int(dateStart)
+        df = df.loc[df['date'] == dateStartInt]
+
     # Iterate through rows, make picks based on spread, and then check the actual outcome
     numPicks = 0
     numCorrect = 0
     numPushes = 0
     numGames = 0
     daySet = set()
-    startingIndex = 0
-    for index, row in df.iloc[startingIndex:].iterrows():
+    for index, row in df.iterrows():
         if row['predAwayScore'] == -1 or row['predHomeScore'] == -1:
             continue
         numGames += 1
@@ -442,11 +481,12 @@ def main():
     season = '2019-2020-regular'
 
     # for i in range(5):
-    simulatePicks(season)
+    df = simulatePicks(season, '20200808', 'test')
+    df.to_csv('../features/gameData/2019-2020-regular-games-test.csv')
 
     for threshold in range(0, 16):
-        assessSpreadPicks(season, threshold)
-        assessSpreadPicks(season, threshold + 0.5)
+        assessSpreadPicks(season, threshold, '20200808')
+        assessSpreadPicks(season, threshold + 0.5, '20200808')
         # assessSeasonOverUnderPicks(season, threshold)
         # assessSeasonOverUnderPicks(season, threshold + 0.5)
 

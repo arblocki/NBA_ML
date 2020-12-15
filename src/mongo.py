@@ -31,8 +31,8 @@ def getTeamDicts(teams):
 #   MUST BE USED WITH A SEASON THAT HAS PREDICTED SCORES
 def insertGamesFromCSV(client, season):
     # Get year's string to access database
-    seasonSubstr = getSeasonStr(season)
-    db = client[seasonSubstr]
+    # seasonSubstr = getSeasonStr(season)
+    db = client['2019-2020']
     coll = db['games']
 
     # Import team dicts
@@ -46,8 +46,6 @@ def insertGamesFromCSV(client, season):
     df = pd.read_csv('../features/gameData/' + season + '-games.csv')
     # df = pd.read_csv('../features/gameData/today-games.csv')
     for index, row in df.iterrows():
-        if str(row['date']) != '20200917':
-            continue
 
         # Calculate bets being made
         spreadThreshold = 6
@@ -139,8 +137,8 @@ def insertGamesFromCSV(client, season):
 # Given an MSF instance, DB instance, and season, insert all unplayed games into the database
 def insertUnplayedGames(msf, client, season):
     # Get year's string to access database
-    seasonSubstr = getSeasonStr(season)
-    db = client[seasonSubstr]
+    # seasonSubstr = getSeasonStr(season)
+    db = client['2019-2020']
     coll = db['games']
 
     output = msf.msf_get_data(feed='seasonal_games', league='nba', season=season, status='unplayed', format='json',
@@ -175,8 +173,8 @@ def insertUnplayedGames(msf, client, season):
 
 # Given a DB instance, and season, delete all unplayed games from the database
 def deleteUnplayedGames(client, season):
-    seasonSubstr = getSeasonStr(season)
-    db = client[seasonSubstr]
+    # seasonSubstr = getSeasonStr(season)
+    db = client['2019-2020']
     coll = db['games']
     query = { "score.away": -1 }
     x = coll.delete_many(query)
@@ -186,8 +184,8 @@ def deleteUnplayedGames(client, season):
 # Given an MSF instance, DB instance, and season string, update all games to whatever data is locally stored
 def updateGames(msf, client, season, df):
     # Get year's string to access database
-    seasonSubstr = getSeasonStr(season)
-    db = client[seasonSubstr]
+    # seasonSubstr = getSeasonStr(season)
+    db = client['2019-2020']
     coll = db['games']
 
     output = msf.msf_get_data(feed='seasonal_games', league='nba', season=season, format='json', force='true')
@@ -291,8 +289,8 @@ def updateTodayGames(msf, client, season):
 # Update a game from yesterday with final score and bet results
 def updateYesterdayGame(client, season, game):
     # Get year's string to access database
-    seasonSubstr = getSeasonStr(season)
-    db = client[seasonSubstr]
+    # seasonSubstr = getSeasonStr(season)
+    db = client['2019-2020']
     coll = db['games']
 
     awayScore = game['score']['awayScoreTotal']
@@ -345,6 +343,32 @@ def updateYesterdayGame(client, season, game):
     coll.update_one(query, newValues)
 
 
+# Given a dataframe of predicted games, insert records for each prediction
+def insertGamePredictions(season, df, testID):
+    client = pymongo.MongoClient('mongodb+srv://' + config.mongoBlock + ':' + config.mongoBlockPW +
+                                 '@nba-data.nftax.azure.mongodb.net/NBA-ML?retryWrites=true&w=majority')
+    # Get year's string to access database
+    # seasonSubstr = getSeasonStr(season)
+    db = client['2019-2020']
+    coll = db['predictions']
+
+    gameList = []
+    for index, row in df.iterrows():
+        gameDict = {
+            'gameID': index,
+            'testID': testID,
+            'pred': {
+                'away': row['predAwayScore'],
+                'home': row['predHomeScore'],
+            },
+        }
+        gameList.append(gameDict)
+
+    # Output the list to mongo using insert_many
+    result = coll.insert_many(gameList)
+    print(len(result.inserted_ids), 'prediction objects inserted')
+
+
 def main():
     client = pymongo.MongoClient('mongodb+srv://' + config.mongoBlock + ':' + config.mongoBlockPW +
                                  '@nba-data.nftax.azure.mongodb.net/NBA-ML?retryWrites=true&w=majority')
@@ -353,13 +377,13 @@ def main():
     msf = MySportsFeeds('2.1', verbose=False)
     msf.authenticate(config.MySportsFeeds_key, "MYSPORTSFEEDS")
 
-    season = '2020-playoff'
+    season = '2020-2021-regular'
 
     # df = pd.read_csv('../features/gameData/' + season + 'games.csv').set_index('gameID', drop=False)
     # updateTodayGames(msf, client, season)
 
-    deleteUnplayedGames(client, season)
-    # insertUnplayedGames(msf, client, season)
+    # deleteUnplayedGames(client, season)
+    insertUnplayedGames(msf, client, season)
 
     # insertGamesFromCSV(client, season)
 

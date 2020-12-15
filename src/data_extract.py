@@ -361,7 +361,8 @@ def getColumnNames():
         homeColumns.append(field.replace('away', 'home'))
     columns.extend(awayColumns)
     columns.extend(homeColumns)
-    columns.extend(['awayScore', 'homeScore', 'spread', 'overUnder', 'date', 'awayTeam', 'awayID', 'homeTeam', 'homeID'])
+    columns.extend(['awayScore', 'homeScore', 'awayWin', 'homeWin', 'spread', 'overUnder', 'date',
+                    'awayTeam', 'awayID', 'homeTeam', 'homeID'])
     return columns
 
 
@@ -463,7 +464,14 @@ def getFinalGameData(msf, season, dateStart, dateEnd):
             updateFourFactorsInputs(season, boxscoreData)
             dateObj = RAPM.convertDatetimeString(game['date'])
             dateStr = dateObj.strftime('%Y%m%d')
-            gameData.extend([game['awayScore'], game['homeScore'], -100, -1, dateStr, game['awayName'], game['awayID'], game['homeName'], game['homeID']])
+            awayWin = 0
+            homeWin = 0
+            if game['awayScore'] > game['homeScore']:
+                awayWin = 1
+            else:
+                homeWin = 1
+            gameData.extend([game['awayScore'], game['homeScore'], awayWin, homeWin, -100, -1, dateStr,
+                             game['awayName'], game['awayID'], game['homeName'], game['homeID']])
         except Exception as err:
             columns = getColumnNames()
             if config.debug:
@@ -572,8 +580,8 @@ def getUpcomingGameData(msf, season, date):
                 gameData.extend(fourFactorsData)
                 gameData.extend(basicPerGameData)
             dateStr = estGameDate.strftime('%Y%m%d')
-            gameData.extend([game['awayScore'], game['homeScore'], -100, -100, dateStr, game['awayName'], game['awayID'],
-                             game['homeName'], game['homeID']])
+            gameData.extend([game['awayScore'], game['homeScore'], -1, -1, -100, -100, dateStr,
+                             game['awayName'], game['awayID'], game['homeName'], game['homeID']])
         except Exception as err:
             columns = getColumnNames()
             if config.debug:
