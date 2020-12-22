@@ -1,14 +1,15 @@
 
-# NBA Machine Learning Model
+import os, sys
+sys.path.insert(0, os.path.dirname(__file__))
 
 import pymongo
 from ohmysportsfeedspy import MySportsFeeds
-from src.config import config
-from src.data_extract import getUpcomingGameData, updateFourFactorsInputs
-from src.model import predictGames
-from src.mongo import updateTodayGames, updateYesterdayGame
-from src.odds import getTodaySpreads
-from src import RAPM
+from config import config
+from data_extract import getUpcomingGameData, updateFourFactorsInputs
+from model import predictGames, assessSpreadPicks, assessOverUnderPicks, assessMLPicks
+from mongo import updateTodayGames, updateYesterdayGame
+from odds import getTodaySpreads
+import RAPM
 from datetime import datetime, timedelta
 import pandas as pd
 import simplejson as json
@@ -40,23 +41,23 @@ def updateYesterdayData(msf, client, season):
                               format='json', force='true')
     if len(output['games']) != 0:
         print('Analyzing ', len(output['games']), ' games from yesterday', sep='')
-        yesterdayDF = pd.read_csv('../features/gameData/today-games.csv').set_index('gameID', drop=True)
+        # yesterdayDF = pd.read_csv('../features/gameData/today-games.csv').set_index('gameID', drop=True)
         for game in output['games']:
             # if game['schedule']['id'] == 58376:
             #     continue
             gameID = game['schedule']['id']
             # Update today-games.csv w/ final scores
-            yesterdayDF.loc[gameID, 'awayScore'] = game['score']['awayScoreTotal']
-            yesterdayDF.loc[gameID, 'homeScore'] = game['score']['homeScoreTotal']
+            # yesterdayDF.loc[gameID, 'awayScore'] = game['score']['awayScoreTotal']
+            # yesterdayDF.loc[gameID, 'homeScore'] = game['score']['homeScoreTotal']
             # Update w/ final score and bet result in Mongo
-            updateYesterdayGame(client, season, game)
+            # updateYesterdayGame(client, season, game)
             # Update 4 Factors inputs with data from this game
             boxscoreData = msf.msf_get_data(feed='game_boxscore', league='nba', season=season, game=gameID, format='json', force='true')
             updateFourFactorsInputs(season, boxscoreData)
         #   Append today-games.csv onto season-games.csv
-        currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
-        newDF = pd.concat([currentSeasonDF, yesterdayDF])
-        newDF.to_csv('../features/gameData/' + season + '-games.csv')
+        # currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
+        # newDF = pd.concat([currentSeasonDF, yesterdayDF])
+        # newDF.to_csv('../features/gameData/' + season + '-games.csv')
 
         # Update RAPM inputs, ratings, and stints
         updateRAPMFeatures(msf, season, yesterdayStr)
@@ -74,7 +75,7 @@ def predictTodayGames(msf, client, season):
     gameDF = getUpcomingGameData(msf, season, todayStr)
     print('Training objects and predicting today\'s games')
     # gameDF = pd.read_csv('../features/gameData/today-games.csv')
-    gameDF = predictGames(season, gameDF)
+    gameDF = predictGames(season, gameDF, ensemble_size=10)
     print('Getting today\'s spreads')
     gameDF = getTodaySpreads(gameDF)
 
@@ -101,7 +102,11 @@ def main():
     client = pymongo.MongoClient('mongodb+srv://' + config.mongoBlock + ':' + config.mongoBlockPW +
                                  '@nba-data.nftax.azure.mongodb.net/NBA-ML?retryWrites=true&w=majority')
 
-    season = '2020-playoff'
+    season = '2019-2020-regular'
+    assessSpreadPicks(season, 6)
+    # for threshold in range(0, 16):
+    #     assessSpreadPicks(season, threshold)
+    #     assessSpreadPicks(season, threshold + 0.5)
 
     # updateYesterdayData(msf, client, season)
     # predictTodayGames(msf, client, season)

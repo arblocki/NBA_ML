@@ -1,7 +1,10 @@
 
-from torch.utils.data import Dataset
+import os, sys
+sys.path.insert(0, os.path.dirname(__file__))
+
 import pandas as pd
 import numpy as np
+from torch.utils.data import Dataset
 from torch.utils.data import random_split
 
 

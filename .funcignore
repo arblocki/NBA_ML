@@ -1,0 +1,9 @@
+.git*
+.vscode
+local.settings.json
+test
+.venv
+.idea
+.tmp.drivedownload
+docs
+todo.md

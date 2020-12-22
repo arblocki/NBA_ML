@@ -1,7 +1,9 @@
-# RAPM Calculation
+
+import os, sys
+sys.path.insert(0, os.path.dirname(__file__))
 
 from ohmysportsfeedspy import MySportsFeeds
-from src.config import config
+from config import config
 
 import simplejson as json
 import numpy as np
@@ -373,6 +375,7 @@ def addDateStintsToCSV(season, date, stintNum):
     df = df.append({'date': date, 'numStints': totalStints}, ignore_index=True)
     # Export back to CSV
     df.to_csv('../features/stintsByDate/' + season + '-stints.csv')
+
 
 # Given units, points, and weights values, calculates RAPM for each player and outputs a list of pairs
 # as (PlayerID, RAPM)

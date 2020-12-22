@@ -1,9 +1,12 @@
 # Game Data Extraction Functions
 
+import os, sys
+sys.path.insert(0, os.path.dirname(__file__))
+
 from ohmysportsfeedspy import MySportsFeeds
-from src.config import config
-from src.injuries import getInjuryDict
-from src import RAPM
+from config import config
+from injuries import getInjuryDict
+import RAPM
 
 import simplejson as json
 import numpy as np

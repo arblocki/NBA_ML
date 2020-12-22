@@ -1,11 +1,13 @@
-# MongoDB
+
+import os, sys
+sys.path.insert(0, os.path.dirname(__file__))
 
 import simplejson as json
 import pymongo
 import pandas as pd
 from ohmysportsfeedspy import MySportsFeeds
-from src.config import config
-from src.RAPM import convertDatetimeString
+from config import config
+from RAPM import convertDatetimeString
 from datetime import timedelta
 
 
@@ -361,6 +363,7 @@ def insertGamePredictions(season, df, testID):
                 'away': row['predAwayScore'],
                 'home': row['predHomeScore'],
             },
+            'rmse': row['rmsError'],
         }
         gameList.append(gameDict)
 

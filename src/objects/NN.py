@@ -1,4 +1,7 @@
 
+import os, sys
+sys.path.insert(0, os.path.dirname(__file__))
+
 import torch.nn as nn
 import torch.nn.functional as F
 from math import sqrt

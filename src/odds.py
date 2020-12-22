@@ -1,7 +1,10 @@
 
+import os, sys
+sys.path.insert(0, os.path.dirname(__file__))
+
 import simplejson as json
 import requests
-from src.config import config
+from config import config
 from ohmysportsfeedspy import MySportsFeeds
 
 def getTodaySpreads(gameDF):

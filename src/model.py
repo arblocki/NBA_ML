@@ -1,4 +1,7 @@
 
+import os, sys
+sys.path.insert(0, os.path.dirname(__file__))
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -8,13 +11,12 @@ from torch.utils.data import DataLoader
 import pandas as pd
 import matplotlib.pyplot as plt
 import random
-from src.data_extract import getPrevSeasonStr
-from src.RAPM import getBasePath
-from src.objects.NN import NN
-from src.objects.CSVDataset import CSVDataset
-from src.mongo import insertGamePredictions
+from data_extract import getPrevSeasonStr
+from RAPM import getBasePath
+from objects.NN import NN
+from objects.CSVDataset import CSVDataset
+from mongo import insertGamePredictions
 from math import sqrt
-from os import path
 
 torch.manual_seed(42)
 np.random.seed(42)
@@ -118,19 +120,23 @@ def avgPredict(row, models, mses):
         prediction = predict(row, model)
         predAwayScores.append(prediction[0])
         predHomeScores.append(prediction[1])
-    predAwayAvg = sum(predAwayScores) / len(predAwayScores)
-    predHomeAvg = sum(predHomeScores) / len(predAwayScores)
+    if len(predAwayScores):
+        predAwayAvg = sum(predAwayScores) / len(predAwayScores)
+        predHomeAvg = sum(predHomeScores) / len(predAwayScores)
+    else:
+        predAwayAvg = -1
+        predHomeAvg = -1
     return [predAwayAvg, predHomeAvg]
 
 
-# Train and evaluate 10 different objects
-def trainModelEnsemble(train_dl, test_dl, dataset):
-    # Train 10 different objects at a time
+# Train and evaluate a variable number of models
+def trainModelEnsemble(train_dl, test_dl, dataset, ensemble_size):
+    # Train a variable number of models based on ensemble_size
     models = []
     criterions = []
     optimizers = []
     mses = []
-    for i in range(10):
+    for i in range(ensemble_size):
         # define the network
         model = NN()
         # model.to(device)
@@ -179,9 +185,13 @@ def getPrevPlayoffStr(season):
 #   Predict games using that model
 #   Date parameter specifies certain date (yyyymmdd)
 #   If testID is specified, write the predictions of each game to mongoDB
-def simulatePicks(season, date=None, testID=None):
+def simulatePicks(season, date=None, testID=None, ensemble_size=1):
     if testID and not date:
         raise AttributeError('Date must be specified with testID!')
+    if testID and ensemble_size != 1:
+        raise AttributeError('ensemble_size must be 1 when testID is specified!')
+    if ensemble_size < 1:
+        raise AttributeError('ensemble_size must be a positive numner!')
 
     if date:
         if len(date) != 8:
@@ -191,12 +201,13 @@ def simulatePicks(season, date=None, testID=None):
         print('Predicting games for', season)
 
     prevSeasonStr = getPrevSeasonStr(season)
-    twoSeasonsBackStr = getPrevSeasonStr(prevSeasonStr)
     path = '../features/gameData/' + prevSeasonStr + '-games.csv'
-    twoSeasonsBackDF = pd.read_csv('../features/gameData/' + twoSeasonsBackStr + '-games.csv').set_index('gameID', drop=True)
-    # load the previous season dataset
     dataset = CSVDataset(path)
+
+    # twoSeasonsBackStr = getPrevSeasonStr(prevSeasonStr)
+    # twoSeasonsBackDF = pd.read_csv('../features/gameData/' + twoSeasonsBackStr + '-games.csv').set_index('gameID', drop=True)
     # dataset.concat(twoSeasonsBackDF)
+
     if season[5:] == 'playoff':
         prevPlayoffStr = getPrevPlayoffStr(season)
         prevPlayoffDF = pd.read_csv('../features/gameData/' + prevPlayoffStr + '-games.csv').set_index('gameID', drop=True)
@@ -208,9 +219,6 @@ def simulatePicks(season, date=None, testID=None):
     # cudnn.benchmark = True
 
     currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
-    # currentSeasonDF['predAwayScore'] = -1
-    # currentSeasonDF['predHomeScore'] = -1
-    # currentSeasonDF['rmsError'] = -1
     currentDate = str(currentSeasonDF['date'].iloc[0])
     numRowsForDate = 0
 
@@ -224,7 +232,7 @@ def simulatePicks(season, date=None, testID=None):
     train_dl, test_dl = prepare_data(dataset)
     print('Training on ', len(train_dl.dataset), ' games, Testing on ', len(test_dl.dataset), ' games', sep='')
 
-    models, mses = trainModelEnsemble(train_dl, test_dl, dataset)
+    models, mses = trainModelEnsemble(train_dl, test_dl, dataset, ensemble_size)
     rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the objects used for each pick
     print('Trained the initial model with RMSE of ', (sum(mses) / len(mses)), sep='')
 
@@ -251,16 +259,17 @@ def simulatePicks(season, date=None, testID=None):
             currentDate = nextDate
             numRowsForDate = 0
 
-            models, mses = trainModelEnsemble(train_dl, test_dl, dataset)
+            models, mses = trainModelEnsemble(train_dl, test_dl, dataset, ensemble_size)
             rmseAvg = sum(mses) / len(mses)
             print('Retrained the model to ', nextDate, ' with RMSE of ', (sum(mses) / len(mses)), sep='')
         prediction = avgPredict(row.values[0:78].astype('float32'), models, mses)
-        currentSeasonDF.loc[index, 'predAwayScore'] = prediction[0]
-        currentSeasonDF.loc[index, 'predHomeScore'] = prediction[1]
-        currentSeasonDF.loc[index, 'rmsError'] = rmseAvg
+        if prediction[0] != -1:
+            currentSeasonDF.loc[index, 'predAwayScore'] = prediction[0]
+            currentSeasonDF.loc[index, 'predHomeScore'] = prediction[1]
+            currentSeasonDF.loc[index, 'rmsError'] = rmseAvg
         numRowsForDate += 1
 
-    if testID:
+    if testID and mses[0] < 20:
         insertGamePredictions(season, currentSeasonDF.loc[currentSeasonDF['date'] == int(date)], testID)
 
     return currentSeasonDF
@@ -285,7 +294,7 @@ def assessSpreadPicks(season, threshold, dateStart=None, dateEnd=None):
     unit = 10
 
     # Load game data into dataframe based on what dates were specified
-    df = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
+    df = pd.read_csv('../features/gameData/' + season + '-games-partial.csv').set_index('gameID', drop=True)
     if dateStart and dateEnd:
         dateStartInt = int(dateStart)
         dateEndInt = int(dateEnd)
@@ -389,15 +398,12 @@ def assessOverUnderPicks(season, threshold, dateStart=None, dateEnd=None):
 
 
 # Given a season and dataframe with game input data, output dataframe with predictions for each game
-def predictGames(season, gameDF):
+def predictGames(season, gameDF, ensemble_size=1):
     # Concatenate the previous two seasons of data with the current season
     prevSeasonStr = getPrevSeasonStr(season)
-    twoSeasonsBackStr = getPrevSeasonStr(prevSeasonStr)
-    path = '../features/gameData/' + twoSeasonsBackStr + '-games.csv'
+    path = '../features/gameData/' + prevSeasonStr + '-games.csv'
     dataset = CSVDataset(path)
-    prevSeasonDF = pd.read_csv('../features/gameData/' + prevSeasonStr + '-games.csv').set_index('gameID', drop=True)
     currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
-    dataset.concat(prevSeasonDF)
     dataset.concat(currentSeasonDF)
     if season[5:] == 'playoff':
         prevPlayoffStr = getPrevPlayoffStr(season)
@@ -410,7 +416,7 @@ def predictGames(season, gameDF):
     gameDF['predAwayScore'] = -1
     gameDF['predHomeScore'] = -1
     gameDF['rmsError'] = -1
-    models, mses = trainModelEnsemble(train_dl, test_dl, dataset)
+    models, mses = trainModelEnsemble(train_dl, test_dl, dataset, ensemble_size)
     rmseAvg = sum(mses) / len(mses)  # Track RMSE metric of the objects used for each pick
     print('Trained the initial model set with RMSE of ', (sum(mses) / len(mses)), sep='')
 
@@ -420,7 +426,8 @@ def predictGames(season, gameDF):
     # Predict each game
     for index, row in gameDF.iterrows():
         # TODO: Parameterize with num_inputs
-        prediction = avgPredict(row.values[1:79].astype('float32'), models, mses)
+        # TODO: MAKE SURE THIS (0:78) IS CORRECT, WAS 1:79 BEFORE BUT I THINK IT SHOULD BE 0:78 B/C OF LINE 420
+        prediction = avgPredict(row.values[0:78].astype('float32'), models, mses)
         gameDF.loc[index, 'predAwayScore'] = prediction[0]
         gameDF.loc[index, 'predHomeScore'] = prediction[1]
         gameDF.loc[index, 'rmsError'] = rmseAvg
@@ -431,7 +438,7 @@ def predictGames(season, gameDF):
 # Given a season and threshold, update the performance logs with the predicted scores and error in gameData CSV
 def logPerformance(season, threshold):
     # Load game data into dataframe
-    gameDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID')
+    gameDF = pd.read_csv('../features/gameData/' + season + '-games-partial.csv').set_index('gameID')
     # Iterate through rows, make picks based on spread, and then check the actual outcome
     perfDict = {}
     for index, row in gameDF.iterrows():
@@ -454,7 +461,7 @@ def logPerformance(season, threshold):
                 perfDict[indexMSE][1] += 1
     # Check if a performance CSV already exists
     filePath = '../features/performance/' + season + '_' + str(threshold) + '.csv'
-    if path.exists(filePath):
+    if os.path.exists(filePath):
         perfDF = pd.read_csv(filePath).set_index('rmse', drop=True)
         # Add items from this run onto the existing performance records
         for mse, record in perfDict.items():
@@ -481,12 +488,12 @@ def main():
     season = '2019-2020-regular'
 
     # for i in range(5):
-    df = simulatePicks(season, '20200808', 'test')
-    df.to_csv('../features/gameData/2019-2020-regular-games-test.csv')
+    # simulatePicks(season, '20200808')
+    # df.to_csv('../features/gameData/2019-2020-regular-games-test.csv')
 
     for threshold in range(0, 16):
-        assessSpreadPicks(season, threshold, '20200808')
-        assessSpreadPicks(season, threshold + 0.5, '20200808')
+        assessSpreadPicks(season, threshold, '20191025', '20191110')
+        assessSpreadPicks(season, threshold + 0.5, '20191025', '20191110')
         # assessSeasonOverUnderPicks(season, threshold)
         # assessSeasonOverUnderPicks(season, threshold + 0.5)
 
