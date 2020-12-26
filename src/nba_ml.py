@@ -41,23 +41,28 @@ def updateYesterdayData(msf, client, season):
                               format='json', force='true')
     if len(output['games']) != 0:
         print('Analyzing ', len(output['games']), ' games from yesterday', sep='')
-        # yesterdayDF = pd.read_csv('../features/gameData/today-games.csv').set_index('gameID', drop=True)
+        yesterdayDF = pd.read_csv('../features/gameData/today-games.csv').set_index('gameID', drop=True)
         for game in output['games']:
             # if game['schedule']['id'] == 58376:
             #     continue
             gameID = game['schedule']['id']
             # Update today-games.csv w/ final scores
-            # yesterdayDF.loc[gameID, 'awayScore'] = game['score']['awayScoreTotal']
-            # yesterdayDF.loc[gameID, 'homeScore'] = game['score']['homeScoreTotal']
+            yesterdayDF.loc[gameID, 'awayScore'] = game['score']['awayScoreTotal']
+            yesterdayDF.loc[gameID, 'homeScore'] = game['score']['homeScoreTotal']
             # Update w/ final score and bet result in Mongo
-            # updateYesterdayGame(client, season, game)
+            updateYesterdayGame(client, season, game)
             # Update 4 Factors inputs with data from this game
-            boxscoreData = msf.msf_get_data(feed='game_boxscore', league='nba', season=season, game=gameID, format='json', force='true')
-            updateFourFactorsInputs(season, boxscoreData)
+            print('Processing gameID', gameID)
+            try:
+                boxscoreData = msf.msf_get_data(feed='game_boxscore', league='nba', season=season, game=gameID, format='json', force='true')
+                updateFourFactorsInputs(season, boxscoreData)
+            except Warning as apiError:
+                print("Warning received on game ", gameID, " boxscore", sep='')
+                print('\t', apiError, sep='')
         #   Append today-games.csv onto season-games.csv
-        # currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
-        # newDF = pd.concat([currentSeasonDF, yesterdayDF])
-        # newDF.to_csv('../features/gameData/' + season + '-games.csv')
+        currentSeasonDF = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
+        newDF = pd.concat([currentSeasonDF, yesterdayDF])
+        newDF.to_csv('../features/gameData/' + season + '-games.csv')
 
         # Update RAPM inputs, ratings, and stints
         updateRAPMFeatures(msf, season, yesterdayStr)
@@ -102,16 +107,19 @@ def main():
     client = pymongo.MongoClient('mongodb+srv://' + config.mongoBlock + ':' + config.mongoBlockPW +
                                  '@nba-data.nftax.azure.mongodb.net/NBA-ML?retryWrites=true&w=majority')
 
-    season = '2019-2020-regular'
-    assessSpreadPicks(season, 6)
+    season = '2020-2021-regular'
+    # assessSpreadPicks(season, 6)
     # for threshold in range(0, 16):
     #     assessSpreadPicks(season, threshold)
     #     assessSpreadPicks(season, threshold + 0.5)
+        # assessOverUnderPicks(season, threshold, '20191025', '20200104')
+        # assessOverUnderPicks(season, threshold + 0.5, '20191025', '20200104')
+
 
     # updateYesterdayData(msf, client, season)
     # predictTodayGames(msf, client, season)
 
-    # updateTodaySpreads(msf, client, season)
+    updateTodaySpreads(msf, client, season)
 
 
 if __name__ == '__main__':

@@ -94,14 +94,14 @@ def calculateWeightedTeamRAPM(msf, season, teamID, ratingDict, injuries=False):
                               stats='minSecondsPerGame', format='json', force='true')
     # Map from playerID to injury status
     injuryDict = {}
-    if injuries:
-        injuryDict = getInjuryDict()
-    nameDict = {}
     # if injuries:
-    #     injuries = msf.msf_get_data(feed='player_injuries', league='nba', format='json', force='true')
-    #     for player in injuries['players']:
-    #         injuryDict[player['id']] = player['currentInjury']['playingProbability']
-    #         nameDict[player['id']] = player['firstName'] + ' ' + player['lastName']
+    #     injuryDict = getInjuryDict()
+    nameDict = {}
+    if injuries:
+        injuries = msf.msf_get_data(feed='player_injuries', league='nba', format='json', force='true')
+        for player in injuries['players']:
+            injuryDict[player['id']] = player['currentInjury']['playingProbability']
+            nameDict[player['id']] = player['firstName'] + ' ' + player['lastName']
     # Record each player's minutes per game, as well as the team total (to calculate average)
     playerIDs = []
     minPerGameByPID = {}
@@ -370,7 +370,7 @@ def getColumnNames():
 
 
 # Given a season and timeframe, get a row of data for each game, output as Pandas dataframe
-def getFinalGameData(msf, season, dateStart, dateEnd):
+def getFinalGameData(msf, season, dateStart='', dateEnd=''):
     isPlayoff = (season[5:] == 'playoff')
     # Use Seasonal feed to get list of (final) games between the dates
     if dateStart == '':  # If no date specified, get data from whole season
@@ -414,6 +414,7 @@ def getFinalGameData(msf, season, dateStart, dateEnd):
             rawGameDate = game['date']
             gameDate = RAPM.convertDatetimeString(rawGameDate)
             estGameDate = gameDate - timedelta(hours=4)
+            dateStr = estGameDate.strftime('%Y%m%d')
             prevDay = getPreviousDay(rawGameDate)
             if config.debug:
                 print('Analyzing gameID ', game['id'], ' from ', estGameDate.strftime('%Y/%m/%d'), ' (#', gameCount, ')',
@@ -465,8 +466,6 @@ def getFinalGameData(msf, season, dateStart, dateEnd):
                 gameData.extend(basicPerGameData)
             boxscoreData = msf.msf_get_data(feed='game_boxscore', league='nba', season=season, game=game['id'], format='json', force='true')
             updateFourFactorsInputs(season, boxscoreData)
-            dateObj = RAPM.convertDatetimeString(game['date'])
-            dateStr = dateObj.strftime('%Y%m%d')
             awayWin = 0
             homeWin = 0
             if game['awayScore'] > game['homeScore']:
@@ -872,13 +871,9 @@ def main():
     msf = MySportsFeeds('2.1', verbose=False)
     msf.authenticate(config.MySportsFeeds_key, "MYSPORTSFEEDS")
 
-    season = '2020-playoff'
-    output = msf.msf_get_data(feed='seasonal_games', league='nba', season=season, status='final', format='json', force='true')
-
-    for game in output['games']:
-        gameID = game['schedule']['id']
-        boxscoreData = msf.msf_get_data(feed='game_boxscore', league='nba', season=season, game=gameID, format='json', force='true')
-        updateFourFactorsInputs(season, boxscoreData)
+    season = '2020-2021-regular'
+    df = getFinalGameData(msf, season, '', '')
+    df.to_csv('../features/gameData/2020-2021-regular-games-test.csv')
 
 
 if __name__ == '__main__':

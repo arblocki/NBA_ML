@@ -152,7 +152,7 @@ def extractPbpData(msf, season, dateStart='', dateEnd=''):
             awayUnit = []
             for awayPlayer in away:
                 if 'Starter' in awayPlayer['position']:
-                    awayUnit.append(str(awayPlayer['player']['id']))
+                    awayUnit.append(awayPlayer['player']['id'])
 
             try:
                 home = output['teamLineups'][1]['actual']['lineupPositions']
@@ -163,7 +163,7 @@ def extractPbpData(msf, season, dateStart='', dateEnd=''):
             homeUnit = []
             for homePlayer in home:
                 if 'Starter' in homePlayer['position']:
-                    homeUnit.append(str(homePlayer['player']['id']))
+                    homeUnit.append(homePlayer['player']['id'])
             homeTeamID = output['game']['homeTeam']['id']
 
             # For each stint, add up points and possessions for each side
@@ -225,11 +225,15 @@ def extractPbpData(msf, season, dateStart='', dateEnd=''):
                         playerIn = play['substitution']['incomingPlayer']['id']
                     if play['substitution']['team']['id'] == homeTeamID:
                         if playerOut != -1 and playerIn != -1:
-                            homeUnit[:] = [playerIn if homePlayer == playerOut else homePlayer for homePlayer in
-                                           homeUnit]
+                            try:
+                                homeUnit.remove(playerOut)
+                            except ValueError:
+                                print("\tTried to remove ID ", playerOut, " from the homeUnit ", homeUnit, sep='')
+                            if playerIn not in homeUnit:
+                                homeUnit.append(playerIn)
                         elif playerOut == -1 and playerIn != -1:
                             if playerIn not in homeUnit:
-                                homeUnit.append(str(playerIn))
+                                homeUnit.append(playerIn)
                         elif playerOut != -1 and playerIn == -1:
                             try:
                                 homeUnit.remove(playerOut)
@@ -237,11 +241,15 @@ def extractPbpData(msf, season, dateStart='', dateEnd=''):
                                 print("\tTried to remove ID ", playerOut, " from the homeUnit ", homeUnit, sep='')
                     else:
                         if playerOut != -1 and playerIn != -1:
-                            awayUnit[:] = [playerIn if awayPlayer == playerOut else awayPlayer for awayPlayer in
-                                           awayUnit]
+                            try:
+                                awayUnit.remove(playerOut)
+                            except ValueError:
+                                print("\tTried to remove ID ", playerOut, " from the awayUnit ", awayUnit, sep='')
+                            if playerIn not in awayUnit:
+                                awayUnit.append(playerIn)
                         elif playerOut == -1 and playerIn != -1:
-                            if playerIn not in homeUnit:
-                                awayUnit.append(str(playerIn))
+                            if playerIn not in awayUnit:
+                                awayUnit.append(playerIn)
                         elif playerOut != -1 and playerIn == -1:
                             try:
                                 awayUnit.remove(playerOut)
@@ -428,15 +436,15 @@ def getBasePath(season, dateStart, dateEnd, dataType):
 # Given units, points, and weights values as well as the season, outputs each of them to a CSV file
 def exportPbpDataToJSON(units, points, weights, basePath):
     # Export units
-    unitsFilename = basePath + '-units.json'
+    unitsFilename = basePath + '-units-test.json'
     with open(unitsFilename, 'w') as outFile:
         json.dump(units, outFile, indent=4, separators=(',', ': '))
     # Export points
-    pointsFilename = basePath + '-points.json'
+    pointsFilename = basePath + '-points-test.json'
     with open(pointsFilename, 'w') as outFile:
         json.dump(points, outFile, indent=4, separators=(',', ': '))
     # Export weights
-    weightsFilename = basePath + '-weights.json'
+    weightsFilename = basePath + '-weights-test.json'
     with open(weightsFilename, 'w') as outFile:
         json.dump(weights, outFile, indent=4, separators=(',', ': '))
 
@@ -467,7 +475,7 @@ def exportPlayerRatings(ratings, playerDict, basePath):
         nextPlayer = {'id': rating[0], 'name': playerDict[int(rating[0])], 'rating': rating[1]}
         ratingsWithName.append(nextPlayer)
     # Output ratings object
-    filename = basePath + '-RAPM.json'
+    filename = basePath + '-RAPM-test.json'
     with open(filename, 'w') as outFile:
         json.dump(ratingsWithName, outFile, indent=4, separators=(',', ': '))
 
@@ -478,7 +486,7 @@ def main():
     msf.authenticate(config.MySportsFeeds_key, "MYSPORTSFEEDS")
 
     # seasons = []
-    season = '2020-playoff'
+    season = '2020-2021-regular'
     # addDateStintsToCSV(season, '20200728', 100)
     # outputStintCSV(msf, season)
     dateStart = ''
@@ -486,29 +494,29 @@ def main():
     printRatings = True
 
     # for season in seasons:
-    # ratingBasePath = getBasePath(season, dateStart, dateEnd, 'RAPM-ratings')
+    ratingBasePath = getBasePath(season, dateStart, dateEnd, 'RAPM-ratings')
     inputBasePath = getBasePath(season, dateStart, dateEnd, 'RAPM-inputs')
 
     # if config.debug: print("Analyzing play-by-play data for " + season + "... ")
-    # units, points, weights = extractPbpData(msf, season, dateStart, dateEnd)
-    unitsImported, pointsImported, weightsImported = importPbpDataFromJSON(inputBasePath)
+    units, points, weights = extractPbpData(msf, season, dateStart, dateEnd)
+    # unitsImported, pointsImported, weightsImported = importPbpDataFromJSON(inputBasePath)
 
     # if config.debug: print("Getting player names...")
     playerDict = getPlayerNames(msf, season)
 
     # if config.debug: print("exporting play-by-play to JSON... ")
-    # exportPbpDataToJSON(units, points, weights, inputBasePath)
+    exportPbpDataToJSON(units, points, weights, inputBasePath)
 
     # if config.debug: print("Calculating RAPM...")
-    # ratings = calculateRAPM(units, points, weights)
-    ratingsImported = calculateRAPM(unitsImported[:224], pointsImported[:224], weightsImported[:224])
+    ratings = calculateRAPM(units, points, weights)
+    # ratingsImported = calculateRAPM(unitsImported[:224], pointsImported[:224], weightsImported[:224])
 
     if printRatings:
-        for rating in ratingsImported:
+        for rating in ratings:
             print(rating[0], "{}".format(playerDict[int(rating[0])]), "{0:.3f}".format(rating[1]))
 
     # if config.debug: print("Export RAPM ratings...")
-    # exportPlayerRatings(ratings, playerDict, ratingBasePath)
+    exportPlayerRatings(ratings, playerDict, ratingBasePath)
 
 
 if __name__ == '__main__':

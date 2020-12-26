@@ -294,13 +294,13 @@ def assessSpreadPicks(season, threshold, dateStart=None, dateEnd=None):
     unit = 10
 
     # Load game data into dataframe based on what dates were specified
-    df = pd.read_csv('../features/gameData/' + season + '-games-partial.csv').set_index('gameID', drop=True)
+    df = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
     if dateStart and dateEnd:
         dateStartInt = int(dateStart)
         dateEndInt = int(dateEnd)
         # TODO: CHECK THAT THIS COPY WORKS
         df = df.loc[(df['date'] >= dateStartInt) & (df['date'] <= dateEndInt)]
-    elif dateStart:  # If no end date specified, use Daily Games feed for startDate
+    elif dateStart:
         dateStartInt = int(dateStart)
         df = df.loc[df['date'] == dateStartInt]
 
@@ -358,8 +358,32 @@ def assessMLPicks(season, threshold, dateStart=None, dateEnd=None):
 # Given a season and threshold of when to make picks, assess the accuracy and frequency of the Over/Under picks
 #       Optional start and end dates for custom timeframes
 def assessOverUnderPicks(season, threshold, dateStart=None, dateEnd=None):
+    if dateStart:
+        if len(dateStart) != 8:
+            raise ValueError('Invalid dateStart given: ', dateStart)
+
+        if dateEnd:
+            if len(dateEnd) != 8:
+                raise ValueError('Invalid dateEnd given: ', dateEnd)
+            print(dateStart, '-', dateEnd, ' results with threshold = ', threshold, sep='')
+        else:
+            print(dateStart, ' results with threshold = ', threshold, sep='')
+    else:
+        print(season, ' results with threshold = ', threshold, sep='')
+
+    unit = 10
+
     # Load game data into dataframe
     df = pd.read_csv('../features/gameData/' + season + '-games.csv').set_index('gameID', drop=True)
+    if dateStart and dateEnd:
+        dateStartInt = int(dateStart)
+        dateEndInt = int(dateEnd)
+        # TODO: CHECK THAT THIS COPY WORKS
+        df = df.loc[(df['date'] >= dateStartInt) & (df['date'] <= dateEndInt)]
+    elif dateStart:
+        dateStartInt = int(dateStart)
+        df = df.loc[df['date'] == dateStartInt]
+
     # Iterate through rows, make picks based on spread, and then check the actual outcome
     numPicks = 0
     numCorrect = 0
@@ -391,10 +415,15 @@ def assessOverUnderPicks(season, threshold, dateStart=None, dateEnd=None):
                 numPushes += 1
     numGames = df.shape[0]
     numDays = len(daySet)
-    print(season, ' results with threshold = ', threshold, sep='')
     print('\t%.3f picks made per day, %.3f percent of all games bet on, ' % ((numPicks / numDays), (numPicks / numGames)), numPicks, ' total', sep='')
     print('\tRecord: ', numCorrect, '-', numPicks - numCorrect - numPushes, '-', numPushes, ' (%.5f)' % (numCorrect / (numPicks - numPushes)), sep='')
     print('\t', numOvers, ' Overs, ', numUnders, ' Unders', sep='')
+    profit = (numCorrect * unit * 0.909) - ((numPicks - numCorrect - numPushes) * unit)
+    percentROI = 100 * profit / (numPicks * unit)
+    if profit < 0:
+        print('\t', '%.2f' % profit, ' with a $', unit, ' unit per bet (', '%.2f' % percentROI, '% ROI)', sep='')
+    else:
+        print('\t+', '%.2f' % profit, ' with a $', unit, ' unit per bet (', '%.2f' % percentROI, '% ROI)', sep='')
 
 
 # Given a season and dataframe with game input data, output dataframe with predictions for each game
@@ -426,8 +455,7 @@ def predictGames(season, gameDF, ensemble_size=1):
     # Predict each game
     for index, row in gameDF.iterrows():
         # TODO: Parameterize with num_inputs
-        # TODO: MAKE SURE THIS (0:78) IS CORRECT, WAS 1:79 BEFORE BUT I THINK IT SHOULD BE 0:78 B/C OF LINE 420
-        prediction = avgPredict(row.values[0:78].astype('float32'), models, mses)
+        prediction = avgPredict(row.values[1:79].astype('float32'), models, mses)
         gameDF.loc[index, 'predAwayScore'] = prediction[0]
         gameDF.loc[index, 'predHomeScore'] = prediction[1]
         gameDF.loc[index, 'rmsError'] = rmseAvg
@@ -485,17 +513,17 @@ def logPerformance(season, threshold):
 
 def main():
 
-    season = '2019-2020-regular'
+    season = '2020-2021-regular'
 
     # for i in range(5):
-    # simulatePicks(season, '20200808')
-    # df.to_csv('../features/gameData/2019-2020-regular-games-test.csv')
+    # df = simulatePicks(season, ensemble_size=10)
+    # df.to_csv('../features/gameData/2020-2021-regular-games.csv')
 
     for threshold in range(0, 16):
-        assessSpreadPicks(season, threshold, '20191025', '20191110')
-        assessSpreadPicks(season, threshold + 0.5, '20191025', '20191110')
-        # assessSeasonOverUnderPicks(season, threshold)
-        # assessSeasonOverUnderPicks(season, threshold + 0.5)
+        # assessSpreadPicks(season, threshold)
+        # assessSpreadPicks(season, threshold + 0.5)
+        assessOverUnderPicks(season, threshold)
+        assessOverUnderPicks(season, threshold + 0.5)
 
     # logPerformance(season, 6)
     # logPerformance(season, 7)

@@ -385,7 +385,7 @@ def main():
     # df = pd.read_csv('../features/gameData/' + season + 'games.csv').set_index('gameID', drop=False)
     # updateTodayGames(msf, client, season)
 
-    # deleteUnplayedGames(client, season)
+    deleteUnplayedGames(client, season)
     insertUnplayedGames(msf, client, season)
 
     # insertGamesFromCSV(client, season)
